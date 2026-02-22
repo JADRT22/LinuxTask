@@ -13,7 +13,7 @@ class LinuxTaskApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("LinuxTask v2.0")
+        self.title("LinuxTask v2.1")
         self.geometry("400x50")
         self.attributes("-topmost", True)
         self.resizable(False, False)
@@ -262,15 +262,23 @@ Path={app_dir}
 
     def playback_thread(self):
         if not self.uinput_device:
-            print("UInput not active")
+            print("UInput not active - Check permissions")
             self.playing = False
             self.after(0, self.reset_ui)
             return
 
+        if not self.events:
+            print("No events recorded.")
+            self.playing = False
+            self.after(0, self.reset_ui)
+            return
+
+        print(f"Starting playback of {len(self.events)} events...")
         try:
             while self.playing:
                 start_play_time = time.time()
-                sorted_events = sorted(self.events, key=lambda k: k['time'])
+                # Sort just once per loop
+                sorted_events = sorted(self.events, key=lambda k: k.get('time', 0))
                 
                 speed = float(self.speed_var.get().replace("x", ""))
                 is_human = self.humanize_enabled.get()
@@ -278,10 +286,7 @@ Path={app_dir}
                 for ev in sorted_events:
                     if not self.playing: break
                     
-                    # Calculate wait
                     target_time = start_play_time + (ev['time'] / speed)
-                    
-                    # Humanize: Add slight random delay variation (0-3%)
                     if is_human:
                         target_time += random.uniform(0, 0.003)
 
@@ -294,29 +299,28 @@ Path={app_dir}
                     target_x = ev.get('x', 0)
                     target_y = ev.get('y', 0)
 
-                    # Humanize: Jitter cursor position (+-2px)
                     if is_human and (ev['type'] == "move" or ev['type'] == "input"):
                         target_x += random.randint(-2, 2)
                         target_y += random.randint(-2, 2)
 
                     if ev['type'] == "move":
-                        subprocess.run(f"hyprctl dispatch movecursor {target_x} {target_y}", shell=True)
+                        subprocess.run(["hyprctl", "dispatch", "movecursor", f"{target_x} {target_y}"], capture_output=True)
                     elif ev['type'] == "input":
-                        # If it's a click, ensure position (optional but good)
-                        if ev['code'] in [272, 273, 274]: # Mouse Btns
-                             subprocess.run(f"hyprctl dispatch movecursor {target_x} {target_y}", shell=True)
+                        if ev.get('code') in [272, 273, 274]:
+                             subprocess.run(["hyprctl", "dispatch", "movecursor", f"{target_x} {target_y}"], capture_output=True)
                         
                         self.uinput_device.write(e.EV_KEY, ev['code'], ev['val'])
                         self.uinput_device.syn()
 
                 if not self.loop_enabled: break
-                time.sleep(0.5)
+                time.sleep(0.3)
 
         except Exception as ex:
             print(f"Playback Error: {ex}")
         
         self.playing = False
         self.after(0, self.reset_ui)
+        print("Playback finished.")
 
     def reset_ui(self):
         self.btn_play.configure(text="⏵", fg_color="#388e3c")

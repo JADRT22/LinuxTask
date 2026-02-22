@@ -17,7 +17,7 @@ It features **Ultra-Smooth Playback** at 100Hz, mimicking human mouse movements 
 
 ---
 
-## ✨ Key Features (v2.0)
+## ✨ Key Features (v2.1)
 - **📟 Ultra-Compact UI:** A new minimal toolbar design inspired by TinyTask, taking up almost no screen space.
 - **🤖 Humanize (Anti-Bot):** New option in settings to add random jitter (±2px) and time variation (0-3%) to playback, making it undetectable in games.
 - **󱄄 Global Hotkey Control:** Start/Stop recording and playback from any window (default F8/F9).
