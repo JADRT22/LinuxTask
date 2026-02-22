@@ -17,8 +17,9 @@ It features **Ultra-Smooth Playback** at 100Hz, mimicking human mouse movements 
 
 ---
 
-## ✨ Key Features (v1.6)
+## ✨ Key Features (v2.0)
 - **📟 Ultra-Compact UI:** A new minimal toolbar design inspired by TinyTask, taking up almost no screen space.
+- **🤖 Humanize (Anti-Bot):** New option in settings to add random jitter (±2px) and time variation (0-3%) to playback, making it undetectable in games.
 - **󱄄 Global Hotkey Control:** Start/Stop recording and playback from any window (default F8/F9).
 - **🛑 Instant Toggle:** The Playback hotkey (F9) now acts as a toggle to start and **immediately stop** the macro.
 - **⚙️ Popup Settings:** Configure your hotkeys in a clean, dedicated popup window (⚙️ icon) to keep the main interface clutter-free.

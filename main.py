@@ -5,6 +5,7 @@ import json
 import subprocess
 import os
 import evdev
+import random
 from evdev import ecodes as e
 from tkinter import filedialog, messagebox
 
@@ -12,7 +13,7 @@ class LinuxTaskApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("LinuxTask v1.6")
+        self.title("LinuxTask v2.0")
         self.geometry("400x50")
         self.attributes("-topmost", True)
         self.resizable(False, False)
@@ -27,6 +28,7 @@ class LinuxTaskApp(ctk.CTk):
         self.start_time = 0
         self.stop_threads = False
         self.loop_enabled = False
+        self.humanize_enabled = ctk.BooleanVar(value=False)
         
         self.hotkey_rec = 66  # F8
         self.hotkey_play = 67 # F9
@@ -92,20 +94,29 @@ class LinuxTaskApp(ctk.CTk):
 
         self.settings_win = ctk.CTkToplevel(self)
         self.settings_win.title("Settings")
-        self.settings_win.geometry("300x200")
+        self.settings_win.geometry("300x250")
         self.settings_win.attributes("-topmost", True)
         self.settings_win.transient(self)
-        self.settings_win.grab_set()
         
-        ctk.CTkLabel(self.settings_win, text="Global Hotkeys", font=("Arial", 14, "bold")).pack(pady=10)
+        # Fix for blank window: Use a Frame container
+        self.settings_frame = ctk.CTkFrame(self.settings_win, fg_color="#2b2b2b", corner_radius=0)
+        self.settings_frame.pack(fill="both", expand=True)
         
-        self.lbl_rec = ctk.CTkButton(self.settings_win, text=f"Record: {self.get_key_name(self.hotkey_rec)}", command=lambda: self.start_mapping("rec", self.lbl_rec))
+        ctk.CTkLabel(self.settings_frame, text="Global Hotkeys", font=("Arial", 14, "bold"), text_color="white").pack(pady=10)
+        
+        # High contrast buttons
+        self.lbl_rec = ctk.CTkButton(self.settings_frame, text=f"Record: {self.get_key_name(self.hotkey_rec)}", fg_color="#1f6aa5", hover_color="#144870", command=lambda: self.start_mapping("rec", self.lbl_rec))
         self.lbl_rec.pack(pady=5, fill="x", padx=20)
         
-        self.lbl_play = ctk.CTkButton(self.settings_win, text=f"Play/Stop: {self.get_key_name(self.hotkey_play)}", command=lambda: self.start_mapping("play", self.lbl_play))
+        self.lbl_play = ctk.CTkButton(self.settings_frame, text=f"Play/Stop: {self.get_key_name(self.hotkey_play)}", fg_color="#1f6aa5", hover_color="#144870", command=lambda: self.start_mapping("play", self.lbl_play))
         self.lbl_play.pack(pady=5, fill="x", padx=20)
 
-        ctk.CTkButton(self.settings_win, text="Create Desktop Entry", fg_color="#555555", command=self.create_desktop_shortcut).pack(pady=15)
+        # Humanize Toggle
+        ctk.CTkCheckBox(self.settings_frame, text="Humanize (Anti-Bot Jitter)", variable=self.humanize_enabled, text_color="white", hover_color="#1f6aa5").pack(pady=10)
+
+        ctk.CTkButton(self.settings_frame, text="Create Desktop Entry", fg_color="#555555", hover_color="#333333", command=self.create_desktop_shortcut).pack(pady=15)
+        
+        self.settings_win.after(100, lambda: self.settings_win.focus()) # Ensure focus
 
     def create_desktop_shortcut(self):
         try:
@@ -259,28 +270,41 @@ Path={app_dir}
         try:
             while self.playing:
                 start_play_time = time.time()
-                # Sort events by time just in case motion/input threads desync
                 sorted_events = sorted(self.events, key=lambda k: k['time'])
                 
                 speed = float(self.speed_var.get().replace("x", ""))
+                is_human = self.humanize_enabled.get()
                 
                 for ev in sorted_events:
                     if not self.playing: break
                     
                     # Calculate wait
                     target_time = start_play_time + (ev['time'] / speed)
+                    
+                    # Humanize: Add slight random delay variation (0-3%)
+                    if is_human:
+                        target_time += random.uniform(0, 0.003)
+
                     now = time.time()
                     wait = target_time - now
                     
                     if wait > 0:
                         time.sleep(wait)
 
+                    target_x = ev.get('x', 0)
+                    target_y = ev.get('y', 0)
+
+                    # Humanize: Jitter cursor position (+-2px)
+                    if is_human and (ev['type'] == "move" or ev['type'] == "input"):
+                        target_x += random.randint(-2, 2)
+                        target_y += random.randint(-2, 2)
+
                     if ev['type'] == "move":
-                        subprocess.run(f"hyprctl dispatch movecursor {ev['x']} {ev['y']}", shell=True)
+                        subprocess.run(f"hyprctl dispatch movecursor {target_x} {target_y}", shell=True)
                     elif ev['type'] == "input":
                         # If it's a click, ensure position (optional but good)
                         if ev['code'] in [272, 273, 274]: # Mouse Btns
-                             subprocess.run(f"hyprctl dispatch movecursor {ev['x']} {ev['y']}", shell=True)
+                             subprocess.run(f"hyprctl dispatch movecursor {target_x} {target_y}", shell=True)
                         
                         self.uinput_device.write(e.EV_KEY, ev['code'], ev['val'])
                         self.uinput_device.syn()
