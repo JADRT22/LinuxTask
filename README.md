@@ -17,12 +17,13 @@ It features **Ultra-Smooth Playback** at 100Hz, mimicking human mouse movements 
 
 ---
 
-## ✨ Key Features
+## ✨ Key Features (v1.5)
+- **📟 Ultra-Compact UI:** A new minimal toolbar design inspired by TinyTask, taking up almost no screen space.
 - **󱄄 Global Hotkey Control:** Start/Stop recording and playback from any window (default F8/F9).
-- **󰕮 Absolute Precision:** Uses `hyprctl` for pixel-perfect coordinate movement on Hyprland.
+- **🛑 Instant Toggle:** The Playback hotkey (F9) now acts as a toggle to start and **immediately stop** the macro.
+- **⚙️ Popup Settings:** Configure your hotkeys in a clean, dedicated popup window (⚙️ icon) to keep the main interface clutter-free.
 - **󰸉 Smooth Sampling:** 100Hz sampling rate for natural, fluid mouse paths.
 - **🔁 Infinite Loop Mode:** Perfect for AFK farming or repetitive data entry.
-- **⚙️ Customizable Hotkeys:** Remap Record and Play keys directly from the UI to any key on your keyboard.
 - **💾 Save & Load:** Export your best macros to JSON and share them or back them up.
 
 ---
@@ -49,7 +50,7 @@ git clone https://github.com/JADRT22/LinuxTask.git
 cd LinuxTask
 python -m venv venv
 source venv/bin/activate
-pip install customtkinter evdev pynput
+pip install customtkinter evdev
 ```
 
 ### 2. Permissions (Essential)
@@ -66,15 +67,14 @@ Run the app and use the global hotkeys:
 ./run.sh
 ```
 - **F8**: Toggle Recording (Global)
-- **F9**: Toggle Playback (Global)
-- **F8 (during play)**: Emergency Stop
+- **F9**: Toggle Playback / **Instant Stop** (Global)
+- **⚙️ Icon**: Open the settings popup to remap your hotkeys.
 
 ---
 
 ## 📂 Architecture
 - `main.py`: The core application logic using `evdev` for capture and `hyprctl` for playback.
 - `run.sh`: Streamlined launcher that handles the virtual environment.
-- `linuxtask.desktop`: Menu entry for your application launcher (Rofi/Drun).
 
 ---
 *Developed by JADRT22 - Optimized for Hyprland*
