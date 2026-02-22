@@ -111,18 +111,21 @@ class LinuxTaskApp(ctk.CTk):
         try:
             home = os.path.expanduser("~")
             app_dir = os.path.abspath(os.path.dirname(__file__))
-            desktop_path = os.path.join(home, ".local/share/applications/LinuxTask.desktop")
+            desktop_path = os.path.join(home, ".local/share/applications/linuxtask.desktop")
             
             content = f"""[Desktop Entry]
 Name=LinuxTask
+Comment=Macro Recorder Minimalista (Clone TinyTask)
 Exec={os.path.join(app_dir, 'run.sh')}
-Icon={os.path.join(app_dir, 'icon.png')}
+Icon=input-mouse
+Terminal=false
 Type=Application
-Categories=Utility;
-Comment=Macro Recorder
+Categories=Utility;Automation;
+StartupNotify=true
+Path={app_dir}
 """
             with open(desktop_path, "w") as f: f.write(content)
-            messagebox.showinfo("Success", "Shortcut created! Look in your app menu.")
+            messagebox.showinfo("Success", "Shortcut updated! Look in your app menu.")
         except Exception as e:
             messagebox.showerror("Error", str(e))
 

@@ -13,15 +13,17 @@ chmod +x "$APP_DIR/run.sh"
 
 # 2. Cria o arquivo .desktop
 echo "Creating desktop entry..."
-cat > "$DESKTOP_DIR/LinuxTask.desktop" <<EOF
+cat > "$DESKTOP_DIR/linuxtask.desktop" <<EOF
 [Desktop Entry]
 Name=LinuxTask
+Comment=Macro Recorder Minimalista (Clone TinyTask)
 Exec=$APP_DIR/run.sh
-Icon=$APP_DIR/icon.png
-Type=Application
+Icon=input-mouse
 Terminal=false
-Categories=Utility;Development;
-Comment=Macro Recorder for Linux (Hyprland)
+Type=Application
+Categories=Utility;Automation;
+StartupNotify=true
+Path=$APP_DIR
 EOF
 
 # 3. Configura Udev Rules para permissão permanente de uinput e input
