@@ -13,7 +13,7 @@ class LinuxTaskApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("LinuxTask v2.1")
+        self.title("LinuxTask v2.2")
         self.geometry("400x50")
         self.attributes("-topmost", True)
         self.resizable(False, False)
@@ -45,7 +45,6 @@ class LinuxTaskApp(ctk.CTk):
         # Styles
         btn_opts = {"width": 40, "height": 40, "font": ("Segoe UI Symbol", 16), "corner_radius": 5}
         
-        # Icons: 📂 💾 ⏺ ⏵ ⚙ 🔁
         self.btn_open = ctk.CTkButton(self, text="📂", fg_color="#333333", hover_color="#444444", command=self.open_file, **btn_opts)
         self.btn_open.grid(row=0, column=0, padx=2, pady=2)
         
@@ -68,18 +67,13 @@ class LinuxTaskApp(ctk.CTk):
         self.btn_settings = ctk.CTkButton(self, text="⚙", fg_color="transparent", hover_color="#222222", width=30, command=self.open_settings)
         self.btn_settings.grid(row=0, column=6, padx=2, pady=2)
 
-        # Tooltips / Status (Optional console output or simple label overlay if needed, 
-        # but keeping it minimal as requested "TinyTask style")
-
         threading.Thread(target=self.global_hardware_listener, daemon=True).start()
 
     def init_uinput(self):
         try:
-            # Capabilities: Mouse buttons + All Keys
             cap = {
                 e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE, e.BTN_SIDE, e.BTN_EXTRA] + list(range(1, 512)),
                 e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL],
-                e.EV_ABS: [e.ABS_X, e.ABS_Y]
             }
             self.uinput_device = evdev.UInput(cap, name="LinuxTask-Virtual-Input", version=0x1)
         except Exception as ex:
@@ -98,45 +92,29 @@ class LinuxTaskApp(ctk.CTk):
         self.settings_win.attributes("-topmost", True)
         self.settings_win.transient(self)
         
-        # Fix for blank window: Use a Frame container
         self.settings_frame = ctk.CTkFrame(self.settings_win, fg_color="#2b2b2b", corner_radius=0)
         self.settings_frame.pack(fill="both", expand=True)
         
         ctk.CTkLabel(self.settings_frame, text="Global Hotkeys", font=("Arial", 14, "bold"), text_color="white").pack(pady=10)
         
-        # High contrast buttons
         self.lbl_rec = ctk.CTkButton(self.settings_frame, text=f"Record: {self.get_key_name(self.hotkey_rec)}", fg_color="#1f6aa5", hover_color="#144870", command=lambda: self.start_mapping("rec", self.lbl_rec))
         self.lbl_rec.pack(pady=5, fill="x", padx=20)
         
         self.lbl_play = ctk.CTkButton(self.settings_frame, text=f"Play/Stop: {self.get_key_name(self.hotkey_play)}", fg_color="#1f6aa5", hover_color="#144870", command=lambda: self.start_mapping("play", self.lbl_play))
         self.lbl_play.pack(pady=5, fill="x", padx=20)
 
-        # Humanize Toggle
         ctk.CTkCheckBox(self.settings_frame, text="Humanize (Anti-Bot Jitter)", variable=self.humanize_enabled, text_color="white", hover_color="#1f6aa5").pack(pady=10)
-
         ctk.CTkButton(self.settings_frame, text="Create Desktop Entry", fg_color="#555555", hover_color="#333333", command=self.create_desktop_shortcut).pack(pady=15)
-        
-        self.settings_win.after(100, lambda: self.settings_win.focus()) # Ensure focus
+        self.settings_win.after(100, lambda: self.settings_win.focus())
 
     def create_desktop_shortcut(self):
         try:
             home = os.path.expanduser("~")
             app_dir = os.path.abspath(os.path.dirname(__file__))
             desktop_path = os.path.join(home, ".local/share/applications/linuxtask.desktop")
-            
-            content = f"""[Desktop Entry]
-Name=LinuxTask
-Comment=Macro Recorder Minimalista (Clone TinyTask)
-Exec={os.path.join(app_dir, 'run.sh')}
-Icon=input-mouse
-Terminal=false
-Type=Application
-Categories=Utility;Automation;
-StartupNotify=true
-Path={app_dir}
-"""
+            content = f"[Desktop Entry]\nName=LinuxTask\nComment=Macro Recorder Minimalista\nExec={os.path.join(app_dir, 'run.sh')}\nIcon=input-mouse\nTerminal=false\nType=Application\nCategories=Utility;Automation;\nStartupNotify=true\nPath={app_dir}\n"
             with open(desktop_path, "w") as f: f.write(content)
-            messagebox.showinfo("Success", "Shortcut updated! Look in your app menu.")
+            messagebox.showinfo("Success", "Shortcut updated!")
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -153,7 +131,6 @@ Path={app_dir}
         return [evdev.InputDevice(path) for path in evdev.list_devices()]
 
     def global_hardware_listener(self):
-        # Simple watcher for all input devices
         devices = self.get_input_devices()
         for d in devices:
             threading.Thread(target=self.device_loop, args=(d,), daemon=True).start()
@@ -162,7 +139,6 @@ Path={app_dir}
         try:
             for event in dev.read_loop():
                 if event.type == e.EV_KEY:
-                    # Mapping Mode
                     if self.is_mapping and event.value == 1:
                         code = event.code
                         name = evdev.ecodes.KEY.get(code, str(code))
@@ -175,32 +151,20 @@ Path={app_dir}
                         self.is_mapping = None
                         continue
 
-                    # Hotkey Action (Press only)
                     if event.value == 1:
                         if event.code == self.hotkey_rec:
                             self.after(0, self.toggle_record)
                         elif event.code == self.hotkey_play:
                             self.after(0, self.handle_play_key)
 
-                    # Recording Logic
                     if self.recording and not self.stop_threads:
-                        # Capture mouse buttons and keys
-                        if event.code in [self.hotkey_rec, self.hotkey_play]: continue # Don't record control keys
-                        
-                        # Get Mouse Pos for context
+                        if event.code in [self.hotkey_rec, self.hotkey_play]: continue
                         x, y = self.get_cursor_pos()
-                        self.events.append({
-                            "type": "input",
-                            "code": event.code,
-                            "val": event.value,
-                            "x": x, "y": y,
-                            "time": time.time() - self.start_time
-                        })
+                        self.events.append({"type": "input", "code": event.code, "val": event.value, "x": x, "y": y, "time": time.time() - self.start_time})
         except: pass
 
     def get_cursor_pos(self):
         try:
-            # Fast hyprctl call
             out = subprocess.check_output("hyprctl cursorpos", shell=True).decode().strip()
             x, y = out.split(", ")
             return int(x), int(y)
@@ -208,17 +172,15 @@ Path={app_dir}
 
     def toggle_record(self):
         if self.playing: return
-        if not self.recording:
-            self.start_recording()
-        else:
-            self.stop_recording()
+        if not self.recording: self.start_recording()
+        else: self.stop_recording()
 
     def start_recording(self):
         self.recording = True
         self.stop_threads = False
         self.events = []
         self.start_time = time.time()
-        self.btn_rec.configure(text="⏹", fg_color="#b71c1c") # Stop Icon
+        self.btn_rec.configure(text="⏹", fg_color="#b71c1c")
         self.btn_play.configure(state="disabled")
         threading.Thread(target=self.record_motion_thread, daemon=True).start()
 
@@ -229,24 +191,17 @@ Path={app_dir}
         self.btn_play.configure(state="normal")
 
     def record_motion_thread(self):
-        # Poll mouse position at ~60Hz-100Hz
         last_x, last_y = -1, -1
         while self.recording and not self.stop_threads:
             x, y = self.get_cursor_pos()
             if x != last_x or y != last_y:
-                self.events.append({
-                    "type": "move",
-                    "x": x, "y": y,
-                    "time": time.time() - self.start_time
-                })
+                self.events.append({"type": "move", "x": x, "y": y, "time": time.time() - self.start_time})
                 last_x, last_y = x, y
-            time.sleep(0.015) # ~66Hz
+            time.sleep(0.015)
 
     def handle_play_key(self):
-        if self.playing:
-            self.stop_playback()
-        else:
-            self.start_playback()
+        if self.playing: self.stop_playback()
+        else: self.start_playback()
 
     def start_playback(self):
         if self.recording or not self.events: return
@@ -257,70 +212,59 @@ Path={app_dir}
 
     def stop_playback(self):
         self.playing = False
-        # UI reset happens in thread finish or here immediately?
-        # Thread checks self.playing, so it will stop.
 
     def playback_thread(self):
         if not self.uinput_device:
-            print("UInput not active - Check permissions")
-            self.playing = False
+            print("UInput not active")
             self.after(0, self.reset_ui)
             return
 
         if not self.events:
-            print("No events recorded.")
             self.playing = False
             self.after(0, self.reset_ui)
             return
 
-        print(f"Starting playback of {len(self.events)} events...")
         try:
             while self.playing:
                 start_play_time = time.time()
-                # Sort just once per loop
                 sorted_events = sorted(self.events, key=lambda k: k.get('time', 0))
-                
                 speed = float(self.speed_var.get().replace("x", ""))
                 is_human = self.humanize_enabled.get()
-                
+                last_recorded_x = None
+                last_recorded_y = None
+
                 for ev in sorted_events:
                     if not self.playing: break
-                    
                     target_time = start_play_time + (ev['time'] / speed)
-                    if is_human:
-                        target_time += random.uniform(0, 0.003)
+                    if is_human: target_time += random.uniform(0, 0.002)
+                    while time.time() < target_time:
+                        if not self.playing: break
+                        time.sleep(0.001)
 
-                    now = time.time()
-                    wait = target_time - now
-                    
-                    if wait > 0:
-                        time.sleep(wait)
-
-                    target_x = ev.get('x', 0)
-                    target_y = ev.get('y', 0)
-
-                    if is_human and (ev['type'] == "move" or ev['type'] == "input"):
-                        target_x += random.randint(-2, 2)
-                        target_y += random.randint(-2, 2)
+                    if not self.playing: break
+                    curr_x, curr_y = ev.get('x', 0), ev.get('y', 0)
 
                     if ev['type'] == "move":
-                        subprocess.run(["hyprctl", "dispatch", "movecursor", f"{target_x} {target_y}"], capture_output=True)
+                        if last_recorded_x is not None:
+                            dx, dy = curr_x - last_recorded_x, curr_y - last_recorded_y
+                            self.uinput_device.write(e.EV_REL, e.REL_X, dx)
+                            self.uinput_device.write(e.EV_REL, e.REL_Y, dy)
+                            self.uinput_device.syn()
+                        else:
+                            subprocess.run(["hyprctl", "dispatch", "movecursor", f"{curr_x} {curr_y}"], capture_output=True)
+                        last_recorded_x, last_recorded_y = curr_x, curr_y
                     elif ev['type'] == "input":
                         if ev.get('code') in [272, 273, 274]:
-                             subprocess.run(["hyprctl", "dispatch", "movecursor", f"{target_x} {target_y}"], capture_output=True)
-                        
+                             subprocess.run(["hyprctl", "dispatch", "movecursor", f"{curr_x} {curr_y}"], capture_output=True)
                         self.uinput_device.write(e.EV_KEY, ev['code'], ev['val'])
                         self.uinput_device.syn()
+                        last_recorded_x, last_recorded_y = curr_x, curr_y
 
                 if not self.loop_enabled: break
-                time.sleep(0.3)
-
-        except Exception as ex:
-            print(f"Playback Error: {ex}")
-        
+                time.sleep(0.1)
+        except Exception as ex: print(f"Playback Error: {ex}")
         self.playing = False
         self.after(0, self.reset_ui)
-        print("Playback finished.")
 
     def reset_ui(self):
         self.btn_play.configure(text="⏵", fg_color="#388e3c")
