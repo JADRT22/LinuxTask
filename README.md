@@ -17,12 +17,12 @@ It features **Ultra-Smooth Playback** at 100Hz, mimicking human mouse movements 
 
 ---
 
-## ✨ Key Features (v1.5)
+## ✨ Key Features (v1.6)
 - **📟 Ultra-Compact UI:** A new minimal toolbar design inspired by TinyTask, taking up almost no screen space.
 - **󱄄 Global Hotkey Control:** Start/Stop recording and playback from any window (default F8/F9).
 - **🛑 Instant Toggle:** The Playback hotkey (F9) now acts as a toggle to start and **immediately stop** the macro.
 - **⚙️ Popup Settings:** Configure your hotkeys in a clean, dedicated popup window (⚙️ icon) to keep the main interface clutter-free.
-- **󰸉 Smooth Sampling:** 100Hz sampling rate for natural, fluid mouse paths.
+- **󰸉 Precise Simulation:** Uses `evdev.UInput` for hardware-level press/release timing (Zero-Loss).
 - **🔁 Infinite Loop Mode:** Perfect for AFK farming or repetitive data entry.
 - **💾 Save & Load:** Export your best macros to JSON and share them or back them up.
 
@@ -30,13 +30,12 @@ It features **Ultra-Smooth Playback** at 100Hz, mimicking human mouse movements 
 
 ## 🛠️ Prerequisites & Dependencies
 
-To ensure full functionality on Wayland/Hyprland, install these components:
+To ensure full functionality on Hyprland, install these components:
 
 | Component | Package | Description |
 | :--- | :--- | :--- |
-| **Input Tool** | `wlrctl` | Handles virtual pointer clicks. |
 | **Compositor** | `hyprland` | Required for `hyprctl` absolute positioning. |
-| **Python** | `python-evdev` | For global hardware event listening. |
+| **Python** | `python-evdev` | For global hardware event listening and simulation. |
 | **UI Kit** | `customtkinter` | Modern dark-themed interface. |
 
 ---
@@ -54,10 +53,11 @@ pip install customtkinter evdev
 ```
 
 ### 2. Permissions (Essential)
-LinuxTask needs permission to read input devices directly. Run these commands:
+LinuxTask needs permission to read and write to input devices directly. Run these commands:
 ```bash
 sudo gpasswd -a $USER input
 sudo chmod 666 /dev/input/event*
+sudo chmod 666 /dev/uinput
 ```
 *Note: A logout/login is recommended after adding your user to the `input` group.*
 

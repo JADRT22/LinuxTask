@@ -1,0 +1,43 @@
+#!/bin/bash
+# Script de Instalação do LinuxTask
+
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+USER_HOME=$(eval echo "~$USER")
+DESKTOP_DIR="$USER_HOME/.local/share/applications"
+UDEV_RULE_PATH="/etc/udev/rules.d/99-uinput.rules"
+
+echo "🚀 Iniciando instalação do LinuxTask..."
+
+# 1. Garante permissões de execução
+chmod +x "$APP_DIR/run.sh"
+
+# 2. Cria o arquivo .desktop
+echo "Creating desktop entry..."
+cat > "$DESKTOP_DIR/LinuxTask.desktop" <<EOF
+[Desktop Entry]
+Name=LinuxTask
+Exec=$APP_DIR/run.sh
+Icon=$APP_DIR/icon.png
+Type=Application
+Terminal=false
+Categories=Utility;Development;
+Comment=Macro Recorder for Linux (Hyprland)
+EOF
+
+# 3. Configura Udev Rules para permissão permanente de uinput e input
+# Isso evita ter que dar sudo chmod toda hora
+echo "Configuring permanent permissions (requires sudo)..."
+sudo bash -c "cat > $UDEV_RULE_PATH <<EOF
+KERNEL=="uinput", GROUP="input", MODE="0660"
+KERNEL=="event*", GROUP="input", MODE="0660"
+EOF"
+
+# 4. Adiciona o usuário ao grupo input (se não estiver)
+sudo gpasswd -a $USER input
+
+# 5. Recarrega as regras do udev
+sudo udevadm control --reload-rules && sudo udevadm trigger
+
+echo "✅ Instalação concluída!"
+echo "Agora você pode pesquisar 'LinuxTask' no seu menu de aplicativos."
+echo "Nota: Pode ser necessário fazer logout e login novamente para as permissões de grupo surtirem efeito."

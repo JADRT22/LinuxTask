@@ -5,6 +5,7 @@ import json
 import subprocess
 import os
 import evdev
+from evdev import ecodes as e
 from tkinter import filedialog, messagebox
 
 class LinuxTaskApp(ctk.CTk):
@@ -30,6 +31,18 @@ class LinuxTaskApp(ctk.CTk):
         self.hotkey_rec = 66  # F8
         self.hotkey_play = 67 # F9
         self.is_mapping = None
+
+        # Initialize UInput for reliable playback
+        try:
+            # We register mouse buttons and common keyboard keys
+            # BTN_LEFT=272, BTN_RIGHT=273, BTN_MIDDLE=274
+            capabilities = {
+                e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE] + list(range(1, 512))
+            }
+            self.ui = evdev.UInput(capabilities, name="LinuxTask-Virtual-Input")
+        except Exception as ex:
+            print(f"Erro ao inicializar UInput: {ex}. Certifique-se de ter permissões em /dev/uinput.")
+            self.ui = None
 
         # Main Layout (Single Row)
         self.grid_columnconfigure((0, 1, 2, 3, 4, 5, 6), weight=1)
@@ -59,17 +72,15 @@ class LinuxTaskApp(ctk.CTk):
         self.btn_settings.grid(row=0, column=6, padx=2, pady=5)
 
         self.status_label = ctk.CTkLabel(self, text="Ready", font=("Arial", 9), text_color="gray")
-        self.status_label.place(x=5, y=48) # Absolute positioning for ultra compact
+        self.status_label.place(x=5, y=48)
 
         threading.Thread(target=self.global_hardware_listener, daemon=True).start()
 
     def open_settings(self):
         settings_win = ctk.CTkToplevel(self)
         settings_win.title("Keys")
-        settings_win.geometry("250x120")
+        settings_win.geometry("250x170")
         settings_win.attributes("-topmost", True)
-        
-        # Make it transient for the main window (helps with taskbar management and window stacking)
         settings_win.transient(self) 
         
         ctk.CTkLabel(settings_win, text="Configure Atalhos:").pack(pady=5)
@@ -79,6 +90,33 @@ class LinuxTaskApp(ctk.CTk):
         
         self.set_play_btn = ctk.CTkButton(settings_win, text=f"PLAY: {self.get_key_name(self.hotkey_play)}", command=lambda: self.start_mapping("play", self.set_play_btn))
         self.set_play_btn.pack(pady=2)
+
+        ctk.CTkButton(settings_win, text="Criar Atalho no Menu", fg_color="#555555", command=self.create_desktop_shortcut).pack(pady=10)
+
+    def create_desktop_shortcut(self):
+        try:
+            home = os.path.expanduser("~")
+            app_dir = os.path.abspath(os.path.dirname(__file__))
+            desktop_path = os.path.join(home, ".local/share/applications/LinuxTask.desktop")
+            run_sh_path = os.path.join(app_dir, "run.sh")
+            icon_path = os.path.join(app_dir, "icon.png")
+
+            desktop_content = f"""[Desktop Entry]
+Name=LinuxTask
+Exec={run_sh_path}
+Icon={icon_path}
+Type=Application
+Terminal=false
+Categories=Utility;Development;
+Comment=Macro Recorder for Linux (Hyprland)
+"""
+            with open(desktop_path, "w") as f:
+                f.write(desktop_content)
+            
+            os.chmod(run_sh_path, 0o755)
+            messagebox.showinfo("Sucesso", "Atalho criado com sucesso! Agora você pode pesquisar 'LinuxTask' no seu menu.")
+        except Exception as ex:
+            messagebox.showerror("Erro", f"Não foi possível criar o atalho: {ex}")
 
     def start_mapping(self, target, btn):
         self.is_mapping = target
@@ -94,7 +132,7 @@ class LinuxTaskApp(ctk.CTk):
         for path in evdev.list_devices():
             try:
                 d = evdev.InputDevice(path)
-                if evdev.ecodes.EV_KEY in d.capabilities(): devices.append(d)
+                if e.EV_KEY in d.capabilities(): devices.append(d)
             except: continue
         return devices
 
@@ -106,14 +144,12 @@ class LinuxTaskApp(ctk.CTk):
     def device_loop(self, device):
         try:
             for event in device.read_loop():
-                if event.type == evdev.ecodes.EV_KEY:
+                if event.type == e.EV_KEY:
                     data = evdev.categorize(event)
                     
                     if self.is_mapping and event.value == 1:
                         if self.is_mapping == "rec": self.hotkey_rec = event.code
                         else: self.hotkey_play = event.code
-                        
-                        # Captura o valor de self.is_mapping para a lambda
                         self.after(0, lambda k=data.keycode, b=self.active_mapping_btn, map_type=self.is_mapping: b.configure(text=f"{map_type.upper()}: {k}", fg_color=ctk.ThemeManager.theme["CTkButton"]["fg_color"]))
                         self.is_mapping = None
                         continue
@@ -121,22 +157,15 @@ class LinuxTaskApp(ctk.CTk):
                     if event.value == 1:
                         if event.code == self.hotkey_rec: self.after(0, self.toggle_record)
                         elif event.code == self.hotkey_play: self.after(0, self.start_playback)
-                        # Removed hardcoded F8 emergency stop to prevent conflicts with key remapping.
 
                     if self.recording and not self.stop_threads:
                         real_x, real_y = self.get_global_cursor_pos()
                         event_type = "mouse_click" if event.code in [272, 273, 274] else "keyboard"
                         self.events.append({
                             "type": event_type, "x": real_x, "y": real_y, "button": event.code,
-                            "pressed": data.keystate == 1, "time": time.time() - self.start_time,
-                            "key_name": data.keycode if event_type == "keyboard" else None
+                            "pressed": event.value == 1, "time": time.time() - self.start_time
                         })
         except: pass
-
-    def update_main_buttons_text(self):
-        # We don't show the keys in the main buttons anymore to keep it tiny, 
-        # but the logic remains.
-        pass
 
     def get_global_cursor_pos(self):
         try:
@@ -163,7 +192,7 @@ class LinuxTaskApp(ctk.CTk):
     def record_movement_thread(self):
         while self.recording and not self.stop_threads:
             x, y = self.get_global_cursor_pos()
-            if not self.events or self.events[-1]["x"] != x or self.events[-1]["y"] != y:
+            if not self.events or self.events[-1].get("x") != x or self.events[-1].get("y") != y:
                 self.events.append({"type": "move", "x": x, "y": y, "time": time.time() - self.start_time})
             time.sleep(0.01)
 
@@ -184,6 +213,9 @@ class LinuxTaskApp(ctk.CTk):
             self.stop_all()
             return
         if not self.events: return
+        if not self.ui:
+            messagebox.showerror("Erro", "UInput não inicializado. Verifique permissões em /dev/uinput.")
+            return
         
         self.playing = True
         self.btn_play.configure(text="Stop", fg_color="gray")
@@ -199,24 +231,24 @@ class LinuxTaskApp(ctk.CTk):
                 if not self.playing: break
                 wait_time = (event["time"] - last_time) / speed_multiplier
                 if wait_time > 0:
-                    sleep_until = time.time() + wait_time
-                    while time.time() < sleep_until:
-                        if not self.playing: break
-                        time.sleep(0.005)
+                    # High precision sleep
+                    time.sleep(wait_time)
+                
                 if not self.playing: break
                 last_time = event["time"]
+                
                 if event["type"] == "move":
                     subprocess.run(["hyprctl", "dispatch", "movecursor", f"{event['x']} {event['y']}"], capture_output=True)
-                elif event["type"] == "mouse_click":
-                    subprocess.run(["hyprctl", "dispatch", "movecursor", f"{event['x']} {event['y']}"], capture_output=True)
-                    if event["pressed"]:
-                        btn = "left" if event["button"] == 272 else "right" if event["button"] == 273 else "middle"
-                        subprocess.run(["wlrctl", "pointer", "click", btn], capture_output=True)
-                elif event["type"] == "keyboard":
-                    if event["pressed"]:
-                        key = event["key_name"]
-                        if isinstance(key, str):
-                            subprocess.run(["wlrctl", "keyboard", "type", key.replace("KEY_", "").lower()], capture_output=True)
+                elif event["type"] in ["mouse_click", "keyboard"]:
+                    # Ensure cursor is at correct position for clicks
+                    if "x" in event:
+                        subprocess.run(["hyprctl", "dispatch", "movecursor", f"{event['x']} {event['y']}"], capture_output=True)
+                    
+                    # Replay exact press/release state
+                    val = 1 if event["pressed"] else 0
+                    self.ui.write(e.EV_KEY, event["button"], val)
+                    self.ui.syn()
+                    
             if not self.loop_enabled: break
             time.sleep(0.3)
         self.playing = False
