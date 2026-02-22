@@ -212,6 +212,16 @@ class LinuxTaskApp(ctk.CTk):
 
     def stop_playback(self):
         self.playing = False
+        self.release_all_safe()
+
+    def release_all_safe(self):
+        if self.uinput_device:
+            # Release all mouse buttons and common keys
+            for code in [272, 273, 274, 275, 276] + list(range(1, 200)):
+                try:
+                    self.uinput_device.write(e.EV_KEY, code, 0)
+                except: pass
+            self.uinput_device.syn()
 
     def playback_thread(self):
         if not self.uinput_device:
@@ -230,8 +240,7 @@ class LinuxTaskApp(ctk.CTk):
                 sorted_events = sorted(self.events, key=lambda k: k.get('time', 0))
                 speed = float(self.speed_var.get().replace("x", ""))
                 is_human = self.humanize_enabled.get()
-                last_recorded_x = None
-                last_recorded_y = None
+                last_recorded_x, last_recorded_y = None, None
 
                 for ev in sorted_events:
                     if not self.playing: break
@@ -263,6 +272,9 @@ class LinuxTaskApp(ctk.CTk):
                 if not self.loop_enabled: break
                 time.sleep(0.1)
         except Exception as ex: print(f"Playback Error: {ex}")
+        finally:
+            self.release_all_safe()
+        
         self.playing = False
         self.after(0, self.reset_ui)
 
