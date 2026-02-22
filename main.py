@@ -85,20 +85,27 @@ class LinuxTaskApp(ctk.CTk):
             self.uinput_device = None
 
     def open_settings(self):
-        win = ctk.CTkToplevel(self)
-        win.title("Settings")
-        win.geometry("300x200")
-        win.attributes("-topmost", True)
+        if hasattr(self, 'settings_win') and self.settings_win.winfo_exists():
+            self.settings_win.lift()
+            self.settings_win.focus()
+            return
+
+        self.settings_win = ctk.CTkToplevel(self)
+        self.settings_win.title("Settings")
+        self.settings_win.geometry("300x200")
+        self.settings_win.attributes("-topmost", True)
+        self.settings_win.transient(self)
+        self.settings_win.grab_set()
         
-        ctk.CTkLabel(win, text="Global Hotkeys", font=("Arial", 14, "bold")).pack(pady=10)
+        ctk.CTkLabel(self.settings_win, text="Global Hotkeys", font=("Arial", 14, "bold")).pack(pady=10)
         
-        self.lbl_rec = ctk.CTkButton(win, text=f"Record: {self.get_key_name(self.hotkey_rec)}", command=lambda: self.start_mapping("rec", self.lbl_rec))
+        self.lbl_rec = ctk.CTkButton(self.settings_win, text=f"Record: {self.get_key_name(self.hotkey_rec)}", command=lambda: self.start_mapping("rec", self.lbl_rec))
         self.lbl_rec.pack(pady=5, fill="x", padx=20)
         
-        self.lbl_play = ctk.CTkButton(win, text=f"Play/Stop: {self.get_key_name(self.hotkey_play)}", command=lambda: self.start_mapping("play", self.lbl_play))
+        self.lbl_play = ctk.CTkButton(self.settings_win, text=f"Play/Stop: {self.get_key_name(self.hotkey_play)}", command=lambda: self.start_mapping("play", self.lbl_play))
         self.lbl_play.pack(pady=5, fill="x", padx=20)
 
-        ctk.CTkButton(win, text="Create Desktop Entry", fg_color="#555555", command=self.create_desktop_shortcut).pack(pady=15)
+        ctk.CTkButton(self.settings_win, text="Create Desktop Entry", fg_color="#555555", command=self.create_desktop_shortcut).pack(pady=15)
 
     def create_desktop_shortcut(self):
         try:
