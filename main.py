@@ -24,7 +24,7 @@ class LinuxTaskApp(ctk.CTk):
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
-        # State Variables
+        # State
         self.recording = False
         self.playing = False
         self.events = []
@@ -38,14 +38,11 @@ class LinuxTaskApp(ctk.CTk):
         self.is_mapping = None
         self.uinput_device = None
 
-        # Initialize UInput
         self.init_uinput()
 
-        # Main Layout (Compact Toolbar)
         self.grid_columnconfigure((0, 1, 2, 3, 4, 5, 6), weight=1)
         self.grid_rowconfigure(0, weight=1)
         
-        # Styles
         btn_opts = {"width": 40, "height": 40, "font": ("Segoe UI Symbol", 16), "corner_radius": 5}
         
         self.btn_open = ctk.CTkButton(self, text="📂", fg_color="#333333", hover_color="#444444", command=self.open_file, **btn_opts)
@@ -214,13 +211,15 @@ class LinuxTaskApp(ctk.CTk):
         self.release_all_safe()
 
     def release_all_safe(self):
-        if self.uinput_device:
-            # Release all mouse buttons and common keys
-            for code in [272, 273, 274, 275, 276] + list(range(1, 200)):
-                try:
-                    self.uinput_device.write(e.EV_KEY, code, 0)
-                except: pass
-            self.uinput_device.syn()
+        if not self.uinput_device: return
+        
+        # Release mouse buttons (BTN_LEFT to BTN_SIDE) and common keys
+        mouse_buttons = [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE, e.BTN_SIDE, e.BTN_EXTRA]
+        for code in mouse_buttons + list(range(1, 200)):
+            try:
+                self.uinput_device.write(e.EV_KEY, code, 0)
+            except: pass
+        self.uinput_device.syn()
 
     def playback_thread(self):
         if not self.uinput_device:
