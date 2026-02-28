@@ -2,16 +2,19 @@ import customtkinter as ctk
 import time
 import threading
 import json
-import subprocess
 import os
 import evdev
 import random
 from evdev import ecodes as e
 from tkinter import filedialog, messagebox
+from drivers.factory import AutoDetectDriver
 
 class LinuxTaskApp(ctk.CTk):
     def __init__(self):
         super().__init__()
+        
+        # Desktop Environment Manager
+        self.manager = AutoDetectDriver()
 
         self.title("LinuxTask v2.2")
         self.geometry("400x50")
@@ -164,11 +167,7 @@ class LinuxTaskApp(ctk.CTk):
         except: pass
 
     def get_cursor_pos(self):
-        try:
-            out = subprocess.check_output("hyprctl cursorpos", shell=True).decode().strip()
-            x, y = out.split(", ")
-            return int(x), int(y)
-        except: return 0, 0
+        return self.manager.get_cursor_pos()
 
     def toggle_record(self):
         if self.playing: return
@@ -260,11 +259,11 @@ class LinuxTaskApp(ctk.CTk):
                             self.uinput_device.write(e.EV_REL, e.REL_Y, dy)
                             self.uinput_device.syn()
                         else:
-                            subprocess.run(["hyprctl", "dispatch", "movecursor", f"{curr_x} {curr_y}"], capture_output=True)
+                            self.manager.move_cursor(curr_x, curr_y)
                         last_recorded_x, last_recorded_y = curr_x, curr_y
                     elif ev['type'] == "input":
                         if ev.get('code') in [272, 273, 274]:
-                             subprocess.run(["hyprctl", "dispatch", "movecursor", f"{curr_x} {curr_y}"], capture_output=True)
+                             self.manager.move_cursor(curr_x, curr_y)
                         self.uinput_device.write(e.EV_KEY, ev['code'], ev['val'])
                         self.uinput_device.syn()
                         last_recorded_x, last_recorded_y = curr_x, curr_y

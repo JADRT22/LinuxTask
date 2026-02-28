@@ -29,10 +29,7 @@ EOF
 # 3. Configura Udev Rules para permissão permanente de uinput e input
 # Isso evita ter que dar sudo chmod toda hora
 echo "Configuring permanent permissions (requires sudo)..."
-sudo bash -c "cat > $UDEV_RULE_PATH <<EOF
-KERNEL=="uinput", GROUP="input", MODE="0660"
-KERNEL=="event*", GROUP="input", MODE="0660"
-EOF"
+sudo cp "$APP_DIR/99-linuxtask.rules" "$UDEV_RULE_PATH"
 
 # 4. Adiciona o usuário ao grupo input (se não estiver)
 sudo gpasswd -a $USER input
