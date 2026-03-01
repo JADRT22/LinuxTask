@@ -9,14 +9,41 @@ class GnomeDriver(DesktopManager):
     
     def __init__(self):
         super().__init__()
-        self.screen_width = 1920
-        self.screen_height = 1080
+        self._detect_resolution()
         self.uid = os.getuid()
         self.socket = f'/run/user/{self.uid}/.ydotool_socket'
         self.ensure_daemon()
 
+    def _detect_resolution(self):
+        """Dynamic resolution detection for GNOME/Wayland."""
+        # Try xrandr first (fastest, covers most XWayland scenarios)
+        try:
+            out = subprocess.check_output(['xrandr'], stderr=subprocess.STDOUT).decode()
+            for line in out.splitlines():
+                if '*' in line:
+                    w, h = line.split()[0].split('x')
+                    self.screen_width, self.screen_height = int(w), int(h)
+                    return
+        except: pass
+
+        # Fallback: Query org.gnome.Mutter.DisplayConfig via gdbus
+        try:
+            cmd = ['gdbus', 'call', '--session', '--dest', 'org.gnome.Mutter.DisplayConfig',
+                   '--object-path', '/org/gnome/Mutter/DisplayConfig',
+                   '--method', 'org.gnome.Mutter.DisplayConfig.GetCurrentState']
+            out = subprocess.check_output(cmd).decode()
+            if "'is-current': <true>" in out:
+                import re
+                # Pattern: 'NAME', WIDTH, HEIGHT, ...
+                match = re.search(r"'\d+x\d+@[\d\.]+',\s+(\d+),\s+(\d+).*?'is-current':\s+<true>", out, re.DOTALL)
+                if match:
+                    self.screen_width, self.screen_height = int(match.group(1)), int(match.group(2))
+                    return
+        except: pass
+
+        self.screen_width, self.screen_height = 1920, 1080
+
     def sync_delta(self, dx, dy):
-        """Just accumulate relative movement."""
         self.virtual_x += dx
         self.virtual_y += dy
 
@@ -36,20 +63,16 @@ class GnomeDriver(DesktopManager):
         except: pass
 
     def get_cursor_pos(self):
-        # We return the accumulated deltas
         return int(self.virtual_x), int(self.virtual_y)
         
     def move_cursor(self, x, y):
-        """This is called during playback. We don't use it in pure relative mode."""
         pass
 
     def move_relative(self, dx, dy):
-        """Moves the mouse by a relative amount (dx, dy)."""
         if not shutil.which('ydotool'): return
         try:
             env = os.environ.copy()
             env['YDOTOOL_SOCKET'] = self.socket
-            # Standard relative move
             subprocess.run(['ydotool', 'mousemove', '--', str(int(dx)), str(int(dy))], 
                            env=env, capture_output=True, check=True)
         except:
