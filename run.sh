@@ -1,7 +1,9 @@
 #!/bin/bash
 # Script de Execução e Autoconfiguração do LinuxTask
 
-export APP_DIR="/home/fernando/projetos git/LinuxTask"
+# Resolve o diretório real do script (mesmo se for um symlink)
+APP_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+export APP_DIR
 export YDOTOOL_SOCKET="/tmp/.ydotool_socket"
 cd "$APP_DIR" || exit
 
@@ -18,12 +20,16 @@ if [ "$CAN_READ_EVENTS" != "yes" ] || [ "$CAN_WRITE_UINPUT" != "yes" ]; then
     
     # Executa o instalador via interface gráfica de privilégios (pkexec)
     # Usamos o caminho absoluto sem aspas internas para o pkexec
-    pkexec "/home/fernando/projetos git/LinuxTask/install.sh"
+    pkexec "$APP_DIR/install.sh"
     
     # Aguarda um pouco para o sistema processar as novas regras
     sleep 1
 fi
 
 # 2. Execução normal do app
-source venv/bin/activate
-python main.py
+if [ -d "$APP_DIR/venv" ]; then
+    source "$APP_DIR/venv/bin/activate"
+    python main.py
+else
+    python3 main.py
+fi

@@ -9,6 +9,8 @@ class GnomeDriver(DesktopManager):
     
     def __init__(self):
         super().__init__()
+        self.screen_width = 1920
+        self.screen_height = 1080
         self.uid = os.getuid()
         self.socket = f'/run/user/{self.uid}/.ydotool_socket'
         self.ensure_daemon()

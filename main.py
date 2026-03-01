@@ -1,11 +1,19 @@
-import customtkinter as ctk
+import sys
+
+try:
+    import customtkinter as ctk
+    import evdev
+    from evdev import ecodes as e
+except ImportError:
+    print("Error: Missing dependencies (customtkinter or evdev).", file=sys.stderr)
+    print("Please run install.sh or install python-customtkinter via your package manager.", file=sys.stderr)
+    sys.exit(1)
+
 import time
 import threading
 import json
 import os
-import evdev
 import random
-from evdev import ecodes as e
 from tkinter import filedialog, messagebox
 from drivers.factory import AutoDetectDriver
 

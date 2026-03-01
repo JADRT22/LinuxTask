@@ -8,6 +8,8 @@ class DesktopManager(ABC):
     def __init__(self):
         self.virtual_x = 0
         self.virtual_y = 0
+        self.screen_width = 0
+        self.screen_height = 0
     
     @abstractmethod
     def get_cursor_pos(self):
