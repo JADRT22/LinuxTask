@@ -4,9 +4,12 @@
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 USER_HOME=$(eval echo "~$USER")
 DESKTOP_DIR="$USER_HOME/.local/share/applications"
-UDEV_RULE_PATH="/etc/udev/rules.d/99-uinput.rules"
+UDEV_RULE_PATH="/etc/udev/rules.d/99-linuxtask.rules"
 
 echo "🚀 Iniciando instalação do LinuxTask..."
+
+# 0. Garante que o grupo 'input' exista
+sudo groupadd -f input
 
 # 1. Garante permissões de execução
 chmod +x "$APP_DIR/run.sh"
@@ -36,6 +39,11 @@ sudo gpasswd -a $USER input
 
 # 5. Recarrega as regras do udev
 sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# 6. Permissão IMEDIATA (evita logout/login na primeira vez)
+echo "Granting immediate hardware access..."
+sudo setfacl -m u:$USER:rw /dev/uinput
+sudo setfacl -m u:$USER:rw /dev/input/event*
 
 echo "✅ Instalação concluída!"
 echo "Agora você pode pesquisar 'LinuxTask' no seu menu de aplicativos."

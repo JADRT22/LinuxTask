@@ -1,42 +1,32 @@
 # 🚀 LinuxTask
-### *Desktop Macro Automation with Zero-Loss Global Capture*
+### *Ultimate Linux Macro Automation with Zero-Loss Global Capture*
 
 [![GitHub Release](https://img.shields.io/github/v/release/JADRT22/LinuxTask?style=for-the-badge&color=BC8AD1)](https://github.com/JADRT22/LinuxTask/releases)
 [![License](https://img.shields.io/github/license/JADRT22/LinuxTask?style=for-the-badge&color=8AB4D1)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/JADRT22/LinuxTask?style=for-the-badge&color=D1BD8A)](https://github.com/JADRT22/LinuxTask/stargazers)
 
-**A minimalist, high-performance macro recorder for Linux (X11 & Wayland), optimized for Hyprland and CachyOS. Inspired by TinyTask, built for absolute precision.**
+**LinuxTask** is a high-performance, minimalist macro recorder optimized for Linux (X11 & Wayland). Inspired by TinyTask, it bypasses modern compositor security restrictions by reading directly from the kernel via `evdev`, ensuring hardware-level precision everywhere.
 
 ---
 
-## 💡 Why LinuxTask?
+## ✨ Key Features (v2.2)
 
-Recording macros on Wayland has always been a challenge due to security restrictions. **LinuxTask** bypasses these limitations by reading directly from the kernel hardware via `evdev`, ensuring **Zero-Loss Global Capture**. Whether you're farming AFK in games like Roblox or automating boring desktop tasks, LinuxTask works everywhere, even when minimized.
-
-It features **Ultra-Smooth Playback** at 100Hz, mimicking human mouse movements perfectly instead of "teleporting" the cursor.
-
----
-
-## ✨ Key Features (v2.1)
-- **📟 Ultra-Compact UI:** A new minimal toolbar design inspired by TinyTask, taking up almost no screen space.
-- **🤖 Humanize (Anti-Bot):** New option in settings to add random jitter (±2px) and time variation (0-3%) to playback, making it undetectable in games.
-- **󱄄 Global Hotkey Control:** Start/Stop recording and playback from any window (default F8/F9).
-- **🛑 Instant Toggle:** The Playback hotkey (F9) now acts as a toggle to start and **immediately stop** the macro.
-- **⚙️ Popup Settings:** Configure your hotkeys in a clean, dedicated popup window (⚙️ icon) to keep the main interface clutter-free.
-- **󰸉 Precise Simulation:** Uses `evdev.UInput` for hardware-level press/release timing (Zero-Loss).
-- **🔁 Infinite Loop Mode:** Perfect for AFK farming or repetitive data entry.
-- **💾 Save & Load:** Export your best macros to JSON and share them or back them up.
+- **🛠️ GNOME Wayland Support:** Specialized driver using `ydotool` and relative movement logic for 100% compatibility with GNOME's security model.
+- **⚡ Hardware-Level Capture:** Direct `evdev` integration for zero-loss global recording, even when the application is minimized.
+- **🤖 Humanize (Anti-Bot):** Adds random jitter (±2px) and micro-time variations (0-3%) to mimic human behavior and avoid detection.
+- **📟 Ultra-Compact UI:** Modern, distraction-free toolbar built with `customtkinter`.
+- **󱄄 Global Hotkeys:** Control recording (F8) and playback (F9) from any application.
+- **🛡️ Immediate Permissions:** Included `fix_linuxtask_perms.sh` script to grant hardware access instantly without reboots.
 
 ---
 
-## 🛠️ Prerequisites & Dependencies
-
-To ensure full functionality on Hyprland, install these components:
+## 🛠️ Prerequisites
 
 | Component | Package | Description |
 | :--- | :--- | :--- |
-| **Compositor** | `hyprland` | Required for `hyprctl` absolute positioning. |
-| **Python** | `python-evdev` | For global hardware event listening and simulation. |
+| **Compositor** | `hyprland` / `gnome` | Optimized for Hyprland and GNOME Wayland. |
+| **Input Engine** | `ydotool` | Required for cursor movement on GNOME Wayland. |
+| **Python** | `python-evdev` | For global hardware event listening. |
 | **UI Kit** | `customtkinter` | Modern dark-themed interface. |
 
 ---
@@ -44,7 +34,7 @@ To ensure full functionality on Hyprland, install these components:
 ## 🚀 Getting Started
 
 ### 1. Installation
-Clone the repository and setup the environment:
+Clone the repository and setup the virtual environment:
 ```bash
 git clone https://github.com/JADRT22/LinuxTask.git
 cd LinuxTask
@@ -53,29 +43,28 @@ source venv/bin/activate
 pip install customtkinter evdev
 ```
 
-### 2. Permissions (Essential)
-LinuxTask needs permission to read and write to input devices directly. Run these commands:
+### 2. Configure Permissions (Essential)
+LinuxTask needs direct access to input devices. Run our automated fix script:
 ```bash
-sudo gpasswd -a $USER input
-sudo chmod 666 /dev/input/event*
-sudo chmod 666 /dev/uinput
+chmod +x fix_linuxtask_perms.sh
+./fix_linuxtask_perms.sh
 ```
-*Note: A logout/login is recommended after adding your user to the `input` group.*
+*This script configures the `input` group, `udev` rules, and applies immediate ACL permissions.*
 
-### 3. Usage
-Run the app and use the global hotkeys:
+### 3. Running the App
 ```bash
 ./run.sh
 ```
 - **F8**: Toggle Recording (Global)
 - **F9**: Toggle Playback / **Instant Stop** (Global)
-- **⚙️ Icon**: Open the settings popup to remap your hotkeys.
+- **⚙️ Icon**: Configure custom hotkeys and Humanize mode.
 
 ---
 
-## 📂 Architecture
-- `main.py`: The core application logic using `evdev` for capture and `hyprctl` for playback.
-- `run.sh`: Streamlined launcher that handles the virtual environment.
+## 📂 Project Architecture
+- `main.py`: Core application loop and event dispatcher.
+- `drivers/`: Specialized modules for different desktop environments (GNOME, Hyprland).
+- `fix_linuxtask_perms.sh`: Automation script for system-level configuration.
 
 ---
-*Developed by JADRT22 - Optimized for Hyprland*
+*Developed by JADRT22 - Optimized for Performance and Security.*
