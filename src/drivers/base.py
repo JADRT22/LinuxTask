@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+LinuxTask - base.py
+Description: Abstract base class for compositor drivers.
+Author: JADRT22 (https://github.com/JADRT22)
+License: MIT
+"""
+
 from abc import ABC, abstractmethod
 
 class DesktopManager(ABC):

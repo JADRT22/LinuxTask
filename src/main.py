@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+LinuxTask - main.py
+Description: Main application loop and UI.
+Author: JADRT22 (https://github.com/JADRT22)
+License: MIT
+"""
+
 import sys
 
 try:
@@ -5,16 +13,17 @@ try:
     import evdev
     from evdev import ecodes as e
 except ImportError:
-    print("Error: Missing dependencies (customtkinter or evdev).", file=sys.stderr)
-    print("Please run install.sh or install python-customtkinter via your package manager.", file=sys.stderr)
+    print("Error: Missing dependencies (customtkinter or evdev).",
+          file=sys.stderr)
+    print("Please run install.sh or install python-customtkinter "
+          "via your package manager.", file=sys.stderr)
     sys.exit(1)
 
 import time
 import threading
 import json
 import os
-import random
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 from drivers.factory import AutoDetectDriver
 
 class LinuxTaskApp(ctk.CTk):
@@ -43,30 +52,63 @@ class LinuxTaskApp(ctk.CTk):
 
         self.grid_columnconfigure((0, 1, 2, 3, 4, 5, 6), weight=1)
         self.grid_rowconfigure(0, weight=1)
-        btn_opts = {"width": 40, "height": 40, "font": ("Segoe UI Symbol", 16), "corner_radius": 5}
+        btn_opts = {
+            "width": 40, "height": 40,
+            "font": ("Segoe UI Symbol", 16), "corner_radius": 5
+        }
         
-        self.btn_open = ctk.CTkButton(self, text="📂", fg_color="#333333", hover_color="#444444", command=self.open_file, **btn_opts)
+        self.btn_open = ctk.CTkButton(
+            self, text="📂", fg_color="#333333", hover_color="#444444",
+            command=self.open_file, **btn_opts
+        )
         self.btn_open.grid(row=0, column=0, padx=2, pady=2)
-        self.btn_save = ctk.CTkButton(self, text="💾", fg_color="#333333", hover_color="#444444", command=self.save_file, **btn_opts)
+
+        self.btn_save = ctk.CTkButton(
+            self, text="💾", fg_color="#333333", hover_color="#444444",
+            command=self.save_file, **btn_opts
+        )
         self.btn_save.grid(row=0, column=1, padx=2, pady=2)
-        self.btn_rec = ctk.CTkButton(self, text="⏺", fg_color="#d32f2f", hover_color="#b71c1c", command=self.toggle_record, **btn_opts)
+
+        self.btn_rec = ctk.CTkButton(
+            self, text="⏺", fg_color="#d32f2f", hover_color="#b71c1c",
+            command=self.toggle_record, **btn_opts
+        )
         self.btn_rec.grid(row=0, column=2, padx=2, pady=2)
-        self.btn_play = ctk.CTkButton(self, text="⏵", fg_color="#388e3c", hover_color="#1b5e20", command=self.start_playback, **btn_opts)
+
+        self.btn_play = ctk.CTkButton(
+            self, text="⏵", fg_color="#388e3c", hover_color="#1b5e20",
+            command=self.start_playback, **btn_opts
+        )
         self.btn_play.grid(row=0, column=3, padx=2, pady=2)
-        self.btn_loop = ctk.CTkButton(self, text="🔁", fg_color="#333333", hover_color="#444444", command=self.toggle_loop, **btn_opts)
+
+        self.btn_loop = ctk.CTkButton(
+            self, text="🔁", fg_color="#333333", hover_color="#444444",
+            command=self.toggle_loop, **btn_opts
+        )
         self.btn_loop.grid(row=0, column=4, padx=2, pady=2)
+
         self.speed_var = ctk.StringVar(value="1x")
-        self.speed_menu = ctk.CTkOptionMenu(self, values=["0.5x", "1x", "2x", "4x", "10x"], variable=self.speed_var, width=60, height=25, font=("Arial", 10))
+        self.speed_menu = ctk.CTkOptionMenu(
+            self, values=["0.5x", "1x", "2x", "4x", "10x"],
+            variable=self.speed_var, width=60, height=25, font=("Arial", 10)
+        )
         self.speed_menu.grid(row=0, column=5, padx=2, pady=2)
-        self.btn_settings = ctk.CTkButton(self, text="⚙", fg_color="transparent", hover_color="#222222", width=30, command=self.open_settings)
+
+        self.btn_settings = ctk.CTkButton(
+            self, text="⚙", fg_color="transparent", hover_color="#222222",
+            width=30, command=self.open_settings
+        )
         self.btn_settings.grid(row=0, column=6, padx=2, pady=2)
 
         threading.Thread(target=self.global_hardware_listener, daemon=True).start()
 
     def init_uinput(self):
         try:
-            cap = {e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE] + list(range(1, 512))}
-            self.uinput_device = evdev.UInput(cap, name="LinuxTask-Virtual", vendor=0x1234, product=0x5678)
+            keys = [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE] + list(range(1, 512))
+            cap = {e.EV_KEY: keys}
+            self.uinput_device = evdev.UInput(
+                cap, name="LinuxTask-Virtual", vendor=0x1234, product=0x5678
+            )
         except: pass
 
     def open_settings(self):
@@ -76,12 +118,24 @@ class LinuxTaskApp(ctk.CTk):
         self.settings_win.attributes("-topmost", True)
         self.settings_frame = ctk.CTkFrame(self.settings_win, fg_color="#2b2b2b")
         self.settings_frame.pack(fill="both", expand=True)
-        ctk.CTkLabel(self.settings_frame, text="Global Hotkeys", font=("Arial", 14, "bold")).pack(pady=10)
-        self.lbl_rec = ctk.CTkButton(self.settings_frame, text=f"Record: {self.get_key_name(self.hotkey_rec)}", command=lambda: self.start_mapping("rec", self.lbl_rec))
+        ctk.CTkLabel(
+            self.settings_frame, text="Global Hotkeys", font=("Arial", 14, "bold")
+        ).pack(pady=10)
+        self.lbl_rec = ctk.CTkButton(
+            self.settings_frame,
+            text=f"Record: {self.get_key_name(self.hotkey_rec)}",
+            command=lambda: self.start_mapping("rec", self.lbl_rec)
+        )
         self.lbl_rec.pack(pady=5, fill="x", padx=20)
-        self.lbl_play = ctk.CTkButton(self.settings_frame, text=f"Play/Stop: {self.get_key_name(self.hotkey_play)}", command=lambda: self.start_mapping("play", self.lbl_play))
+        self.lbl_play = ctk.CTkButton(
+            self.settings_frame,
+            text=f"Play/Stop: {self.get_key_name(self.hotkey_play)}",
+            command=lambda: self.start_mapping("play", self.lbl_play)
+        )
         self.lbl_play.pack(pady=5, fill="x", padx=20)
-        ctk.CTkCheckBox(self.settings_frame, text="Humanize", variable=self.humanize_enabled).pack(pady=10)
+        ctk.CTkCheckBox(
+            self.settings_frame, text="Humanize", variable=self.humanize_enabled
+        ).pack(pady=10)
 
     def start_mapping(self, mode, btn):
         self.is_mapping = mode
@@ -104,13 +158,17 @@ class LinuxTaskApp(ctk.CTk):
                 if event.type == e.EV_REL and self.recording:
                     dx = event.value if event.code == e.REL_X else 0
                     dy = event.value if event.code == e.REL_Y else 0
-                    self.events.append({"type": "rel", "dx": dx, "dy": dy, "time": time.time() - self.start_time})
+                    self.events.append({
+                        "type": "rel", "dx": dx, "dy": dy,
+                        "time": time.time() - self.start_time
+                    })
 
                 if event.type == e.EV_KEY:
                     if self.is_mapping and event.value == 1:
                         if self.is_mapping == "rec": self.hotkey_rec = event.code
                         else: self.hotkey_play = event.code
-                        self.is_mapping = None; continue
+                        self.is_mapping = None
+                        continue
 
                     if event.value == 1:
                         if event.code == self.hotkey_rec: self.after(0, self.toggle_record)
@@ -118,13 +176,19 @@ class LinuxTaskApp(ctk.CTk):
 
                     if self.recording and not self.stop_threads:
                         if event.code not in [self.hotkey_rec, self.hotkey_play]:
-                            self.events.append({"type": "key", "code": event.code, "val": event.value, "time": time.time() - self.start_time})
+                            self.events.append({
+                                "type": "key", "code": event.code,
+                                "val": event.value,
+                                "time": time.time() - self.start_time
+                            })
         except: pass
 
     def toggle_record(self):
         if self.playing: return
         if not self.recording:
-            self.recording = True; self.events = []; self.start_time = time.time()
+            self.recording = True
+            self.events = []
+            self.start_time = time.time()
             self.btn_rec.configure(text="⏹", fg_color="#b71c1c")
         else:
             self.recording = False
@@ -146,8 +210,11 @@ class LinuxTaskApp(ctk.CTk):
                 start_p = time.time()
                 speed = float(self.speed_var.get().replace("x", ""))
                 for ev in self.events:
-                    if not self.playing: break
-                    while time.time() < start_p + (ev['time'] / speed): time.sleep(0.001)
+                    if not self.playing:
+                        break
+                    target_time = start_p + (ev['time'] / speed)
+                    while time.time() < target_time:
+                        time.sleep(0.001)
                     if ev['type'] == "rel":
                         self.manager.move_relative(ev['dx'], ev['dy'])
                     elif ev['type'] == "key":
@@ -170,4 +237,5 @@ class LinuxTaskApp(ctk.CTk):
             with open(f, 'r') as fp: self.events = json.load(fp)
 
 if __name__ == "__main__":
-    app = LinuxTaskApp(); app.mainloop()
+    app = LinuxTaskApp()
+    app.mainloop()

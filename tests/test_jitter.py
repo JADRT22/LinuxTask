@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+LinuxTask - test_jitter.py
+Description: Tests for humanize mode and jitter logic.
+Author: JADRT22 (https://github.com/JADRT22)
+License: MIT
+"""
+
 import random
 import unittest
 

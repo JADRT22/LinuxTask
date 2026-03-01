@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+LinuxTask - test_coordinate_precision.py
+Description: Tests for coordinate clamping and scaling.
+Author: JADRT22 (https://github.com/JADRT22)
+License: MIT
+"""
+
 import sys
 import os
 

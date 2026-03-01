@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+LinuxTask - factory.py
+Description: Driver factory for auto-detection.
+Author: JADRT22 (https://github.com/JADRT22)
+License: MIT
+"""
+
 import os
 from .hyprland import HyprlandDriver
 from .gnome import GnomeDriver

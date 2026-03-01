@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+LinuxTask - test_hyprland_driver.py
+Description: Unit tests for Hyprland driver.
+Author: JADRT22 (https://github.com/JADRT22)
+License: MIT
+"""
+
 import unittest
 from unittest.mock import patch, MagicMock
 import subprocess

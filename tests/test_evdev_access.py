@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+LinuxTask - test_evdev_access.py
+Description: Tests for evdev hardware access and permissions.
+Author: JADRT22 (https://github.com/JADRT22)
+License: MIT
+"""
+
 import evdev
 import os
 

@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+LinuxTask - hyprland.py
+Description: Hyprland compositor driver.
+Author: JADRT22 (https://github.com/JADRT22)
+License: MIT
+"""
+
 import subprocess
 import json
 import time
@@ -13,7 +21,9 @@ class HyprlandDriver(DesktopManager):
     def _detect_resolution(self):
         """Populates screen resolution via hyprctl monitors."""
         try:
-            out = subprocess.check_output("hyprctl monitors -j", shell=True).decode().strip()
+            out = subprocess.check_output(
+                "hyprctl monitors -j", shell=True
+            ).decode().strip()
             monitors = json.loads(out)
             if monitors:
                 focused = next((m for m in monitors if m.get("focused")), monitors[0])
@@ -28,7 +38,9 @@ class HyprlandDriver(DesktopManager):
     def get_cursor_pos(self):
         """Returns current (x, y) coordinates."""
         try:
-            out = subprocess.check_output("hyprctl cursorpos", shell=True).decode().strip()
+            out = subprocess.check_output(
+                "hyprctl cursorpos", shell=True
+            ).decode().strip()
             x, y = out.split(", ")
             return int(x), int(y)
         except Exception as e:
@@ -38,7 +50,10 @@ class HyprlandDriver(DesktopManager):
     def move_cursor(self, x, y):
         """Moves cursor to absolute coordinates."""
         try:
-            subprocess.run(["hyprctl", "dispatch", "movecursor", f"{x} {y}"], capture_output=True)
+            subprocess.run(
+                ["hyprctl", "dispatch", "movecursor", f"{x} {y}"],
+                capture_output=True
+            )
         except Exception as e:
             print(f"Hyprland Error (move_cursor): {e}")
 

@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+LinuxTask - gnome.py
+Description: GNOME Wayland compositor driver.
+Author: JADRT22 (https://github.com/JADRT22)
+License: MIT
+"""
+
 import subprocess
 import shutil
 import os
@@ -28,16 +36,24 @@ class GnomeDriver(DesktopManager):
 
         # Fallback: Query org.gnome.Mutter.DisplayConfig via gdbus
         try:
-            cmd = ['gdbus', 'call', '--session', '--dest', 'org.gnome.Mutter.DisplayConfig',
-                   '--object-path', '/org/gnome/Mutter/DisplayConfig',
-                   '--method', 'org.gnome.Mutter.DisplayConfig.GetCurrentState']
+            cmd = [
+                'gdbus', 'call', '--session', '--dest',
+                'org.gnome.Mutter.DisplayConfig',
+                '--object-path', '/org/gnome/Mutter/DisplayConfig',
+                '--method', 'org.gnome.Mutter.DisplayConfig.GetCurrentState'
+            ]
             out = subprocess.check_output(cmd).decode()
             if "'is-current': <true>" in out:
                 import re
                 # Pattern: 'NAME', WIDTH, HEIGHT, ...
-                match = re.search(r"'\d+x\d+@[\d\.]+',\s+(\d+),\s+(\d+).*?'is-current':\s+<true>", out, re.DOTALL)
+                pattern = (
+                    r"'\d+x\d+@[\d\.]+',\s+(\d+),\s+(\d+).*?"
+                    r"'is-current':\s+<true>"
+                )
+                match = re.search(pattern, out, re.DOTALL)
                 if match:
-                    self.screen_width, self.screen_height = int(match.group(1)), int(match.group(2))
+                    self.screen_width = int(match.group(1))
+                    self.screen_height = int(match.group(2))
                     return
         except: pass
 
