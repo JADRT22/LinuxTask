@@ -28,14 +28,15 @@ echo -e "${GREEN}Adding user $USER to 'input' group...${NC}"
 sudo gpasswd -a "$USER" input
 
 # 4. Install udev rules
-RULES_FILE="99-linuxtask.rules"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RULES_FILE="$SCRIPT_DIR/99-linuxtask.rules"
 TARGET_DIR="/etc/udev/rules.d/"
 
 if [ -f "$RULES_FILE" ]; then
     echo -e "${GREEN}Installing udev rules to $TARGET_DIR...${NC}"
     sudo cp "$RULES_FILE" "$TARGET_DIR"
 else
-    echo -e "${RED}Error: $RULES_FILE not found in current directory.${NC}"
+    echo -e "${RED}Error: $RULES_FILE not found in $SCRIPT_DIR.${NC}"
     exit 1
 fi
 

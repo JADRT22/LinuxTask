@@ -6,7 +6,7 @@ import sys
 import os
 
 # Adjust path to import drivers
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from drivers.hyprland import HyprlandDriver
 
