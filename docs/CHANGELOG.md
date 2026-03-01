@@ -1,5 +1,19 @@
 # Changelog
 
+## [v2.4.0] - 2026-03-01
+### ✨ New Features
+- Epic: Implement Release Automation Script in tools/release.py
+- Epic: Professionalize Documentation (README.md overhaul and CONTRIBUTING.md)
+- Epic: Standardize Code Headers & PEP 8 Compliance across all Python files
+- Epic: Repository Structural Reorganization into src/, tests/, docs/, tools/
+### 🛡️ Improvements & Fixes
+- Fix AttributeError in GnomeDriver by adding screen resolution attributes
+### 🛠️ Other Changes
+- Validate HyprlandDriver and add unit tests with mocks
+- Investigate absolute cursor position on GNOME and add research PoC script
+- Implement dynamic screen resolution detection on GNOME/Wayland via gdbus and xrandr
+
+
 ## [v2.2] - 2026-03-01
 ### 🛡️ Permissions & GNOME Wayland Compatibility
 - **Hardware Access Automation:** Introduced `fix_linuxtask_perms.sh` to automate ACL and Udev configuration, allowing immediate hardware access without requiring a logout.

@@ -30,7 +30,7 @@ class LinuxTaskApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.manager = AutoDetectDriver()
-        self.title("LinuxTask v2.2 - Pure Relative")
+        self.title("LinuxTask v2.4.0 - Pure Relative")
         self.geometry("400x50")
         self.attributes("-topmost", True)
         self.resizable(False, False)
