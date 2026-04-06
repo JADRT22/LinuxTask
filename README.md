@@ -11,12 +11,12 @@
 
 ## ✨ Key Features
 
-- **🛠️ GNOME Wayland Support:** Specialized driver using `ydotool` and relative movement logic for 100% compatibility with GNOME's security model.
-- **⚡ Hardware-Level Capture:** Direct `evdev` integration for zero-loss global recording, even when the application is minimized.
-- **🤖 Humanize (Anti-Bot):** Adds random jitter (±2px) and micro-time variations (0-3%) to mimic human behavior and avoid detection.
-- **📟 Ultra-Compact UI:** Modern, distraction-free toolbar built with `customtkinter`.
-- **󱄄 Global Hotkeys:** Control recording and playback from any application.
-- **🛡️ Immediate Permissions:** Integrated automation to grant hardware access instantly.
+- **🖥️ X11 Support (New!)**: Specialized driver for Cinnamon, MATE, XFCE, and other X11-based environments using `xdotool`.
+- **🛠️ GNOME Wayland Support**: Specialist driver with relative movement logic for 100% compatibility with Wayland security models.
+- **⚡ Hardware-Level Capture**: Direct `evdev` integration for zero-loss global recording of keys and mouse (including scroll wheel).
+- **🤖 Humanize (Anti-Bot)**: Adds random jitter (±2px) and micro-time variations to mimic human behavior.
+- **📟 Ultra-Compact UI**: Modern, distraction-free toolbar with dark theme by default.
+- **󱄄 Global Hotkeys**: F8 to Record, F9 to Play (configurable, with ESC to cancel).
 
 ---
 
@@ -24,8 +24,8 @@
 
 | Component | Package | Description |
 | :--- | :--- | :--- |
-| **Compositor** | `hyprland` / `gnome` | Optimized for Hyprland and GNOME Wayland. |
-| **Input Engine** | `ydotool` | Required for cursor movement on GNOME Wayland. |
+| **Compositor** | `hyprland` / `gnome` / `cinnamon` | Support for X11, GNOME Wayland, and Hyprland. |
+| **Movement Engine** | `xdotool` / `ydotool` | Required for cursor control (X11 / GNOME Wayland). |
 | **Python** | `python-evdev` | For global hardware event listening. |
 | **UI Kit** | `customtkinter` | Modern dark-themed interface. |
 
