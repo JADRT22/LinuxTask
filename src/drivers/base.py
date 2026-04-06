@@ -8,28 +8,51 @@ License: MIT
 
 from abc import ABC, abstractmethod
 
+
 class DesktopManager(ABC):
     """
     Base class for compositor drivers.
+    All drivers must implement get_cursor_pos, move_cursor, and move_relative.
     """
-    
+
     def __init__(self):
-        self.virtual_x = 0
-        self.virtual_y = 0
         self.screen_width = 0
         self.screen_height = 0
-    
+
     @abstractmethod
     def get_cursor_pos(self):
         """Returns (x, y) coordinates."""
         pass
-        
+
     @abstractmethod
     def move_cursor(self, x, y):
-        """Moves cursor to (x, y)."""
+        """Moves cursor to absolute (x, y)."""
         pass
 
-    def sync_delta(self, dx, dy):
-        """Updates internal virtual position based on relative movements."""
-        self.virtual_x += dx
-        self.virtual_y += dy
+    @abstractmethod
+    def move_relative(self, dx, dy):
+        """Moves cursor by relative offset (dx, dy).
+        Must return True if handled by compositor, or False to fallback to UInput.
+        """
+        pass
+
+    def mouse_button(self, button, pressed):
+        """Handles mouse button press/release.
+
+        Args:
+            button: evdev button code (e.g. BTN_LEFT=272).
+            pressed: True for press, False for release.
+
+        Returns:
+            True if handled by driver, False to fall back to UInput.
+        """
+        return False
+
+    def scroll(self, direction, clicks=1):
+        """Performs scroll action. Override in subclass if supported.
+
+        Args:
+            direction: 'up' or 'down'.
+            clicks: number of scroll steps.
+        """
+        pass
