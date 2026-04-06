@@ -78,12 +78,15 @@ mkdir -p "$DESKTOP_DIR"
 
 # 3. Create .desktop entry
 echo "[INFO] Creating desktop entry..."
+ABS_ICON_PATH=$(realpath "$REPO_ROOT/assets/icon.png")
+ABS_RUN_PATH=$(realpath "$APP_DIR/run.sh")
+
 cat > "$DESKTOP_DIR/linuxtask.desktop" <<EOF
 [Desktop Entry]
 Name=LinuxTask
-Comment=Macro Recorder Minimalista (Clone TinyTask)
-Exec=$APP_DIR/run.sh
-Icon=$REPO_ROOT/assets/icon.png
+Comment=Minimalist Macro Recorder (Cinnamon Edition)
+Exec=$ABS_RUN_PATH
+Icon=$ABS_ICON_PATH
 Terminal=false
 Type=Application
 Categories=Utility;Automation;
@@ -91,11 +94,17 @@ StartupNotify=true
 Path=$REPO_ROOT
 EOF
 
-# 4. Configure Udev Rules for permanent uinput and input permissions
+# 4. Finalize shortcut
+chmod +x "$DESKTOP_DIR/linuxtask.desktop"
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$DESKTOP_DIR"
+fi
+
+# 5. Configure Udev Rules for permanent uinput and input permissions
 echo "[INFO] Configuring permanent permissions (requires sudo)..."
 sudo cp "$APP_DIR/99-linuxtask.rules" "$UDEV_RULE_PATH"
 
-# 5. Add user to input group
+# 6. Add user to input group
 sudo gpasswd -a "$USER" input
 
 # 6. Reload udev rules

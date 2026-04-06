@@ -9,6 +9,8 @@ All notable changes to the LinuxTask project will be documented in this file.
 - **Mouse Scroll Recording**: Hardware-level capture of `REL_WHEEL` events and playback support for all drivers.
 - **Improved Hotkey Configuration**: Added "Esc" to cancel hotkey remapping and instant UI feedback for new keys.
 - **Gnome Driver Fallback**: Implemented mouse button handling via `ydotool` for better reliability when UInput is unavailable.
+- **Enhanced Documentation**: Updated `README.md` with professional architecture diagrams, support matrix, and a high-quality demo screenshot.
+- **Improved Installer**: refined `install.sh` to ensure the desktop shortcut is immediately visible and uses absolute paths.
 
 ### Changed
 - **UI Refresh**: Increased window width to `420px` to prevent text overlap and refactored internal component structure.

@@ -10,7 +10,7 @@
 ---
 
 ## 📸 Demo
-![v2.5.0 Release Screenshot](/home/fernando/.gemini/antigravity/brain/c8b2e248-2266-4a33-90bd-17bab7fef6dc/release_v2_5_0_verification_1775505599562.png)
+![LinuxTask Demo](assets/demo.png)
 
 ---
 
