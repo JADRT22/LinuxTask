@@ -1,0 +1,37 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          # Extract last entry from CHANGELOG.md or use git log
+          if [ -f docs/CHANGELOG.md ]; then
+            # Extract content between the first two ## headers
+            sed -n '/^## \[[v0-9.]*\]/,/^## \[[v0-9.]*\]/p' docs/CHANGELOG.md | sed '$d' > release_notes.md
+          fi
+          if [ ! -s release_notes.md ]; then
+            git log --oneline -n 10 > release_notes.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
