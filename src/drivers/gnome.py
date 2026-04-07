@@ -21,6 +21,8 @@ class GnomeDriver(DesktopManager):
 
     def __init__(self):
         super().__init__()
+        self.ydotool_path = shutil.which('ydotool')
+        self.ydotoold_path = shutil.which('ydotoold')
         self._detect_resolution()
         self.uid = os.getuid()
         self.socket = f'/run/user/{self.uid}/.ydotool_socket'
@@ -72,7 +74,7 @@ class GnomeDriver(DesktopManager):
 
         Only kills our own socket's daemon, not all ydotoold processes.
         """
-        if not shutil.which('ydotoold'):
+        if not self.ydotoold_path:
             logger.warning("ydotoold not found. Mouse movement will not work.")
             return
 
@@ -82,7 +84,7 @@ class GnomeDriver(DesktopManager):
                 env = os.environ.copy()
                 env['YDOTOOL_SOCKET'] = self.socket
                 result = subprocess.run(
-                    ['ydotool', 'mousemove', '--', '0', '0'],
+                    [self.ydotool_path, 'mousemove', '--', '0', '0'],
                     env=env, capture_output=True, timeout=2
                 )
                 if result.returncode == 0:
@@ -100,7 +102,7 @@ class GnomeDriver(DesktopManager):
 
         try:
             subprocess.Popen(
-                ['ydotoold', '--socket-path', self.socket],
+                [self.ydotoold_path, '--socket-path', self.socket],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
             for _ in range(30):
@@ -116,7 +118,26 @@ class GnomeDriver(DesktopManager):
             logger.error("Failed to start ydotoold: %s", exc)
 
     def get_cursor_pos(self):
-        """Returns dummy tracked position (absolute pos unavailable on Wayland)."""
+        """Returns cursor position via xdotool or tkinter fallback."""
+        if shutil.which('xdotool'):
+            try:
+                out = subprocess.check_output(
+                    ['xdotool', 'getmouselocation'], stderr=subprocess.DEVNULL
+                ).decode().strip()
+                parts = dict(p.split(':') for p in out.split() if ':' in p)
+                return int(parts['x']), int(parts['y'])
+            except Exception as exc:
+                logger.debug("get_cursor_pos (xdotool) failed: %s", exc)
+        
+        try:
+            import tkinter as tk
+            root = tk.Tk()
+            x, y = root.winfo_pointerx(), root.winfo_pointery()
+            root.destroy()
+            return x, y
+        except Exception as exc:
+            logger.debug("get_cursor_pos (tkinter) failed: %s", exc)
+        
         return 0, 0
 
     def move_cursor(self, x, y):
@@ -131,13 +152,13 @@ class GnomeDriver(DesktopManager):
 
     def move_relative(self, dx, dy):
         """Moves cursor by relative offset using ydotool."""
-        if not shutil.which('ydotool'):
+        if not self.ydotool_path:
             return False
         try:
             env = os.environ.copy()
             env['YDOTOOL_SOCKET'] = self.socket
             subprocess.run(
-                ['ydotool', 'mousemove', '--',
+                [self.ydotool_path, 'mousemove', '--',
                  str(int(dx)), str(int(dy))],
                 env=env, capture_output=True, check=True
             )
@@ -164,14 +185,14 @@ class GnomeDriver(DesktopManager):
         elif button == 273: ydo_btn = "0x41"
         elif button == 274: ydo_btn = "0x42"
 
-        if not ydo_btn or not shutil.which('ydotool'):
+        if not ydo_btn or not self.ydotool_path:
             return False
 
         try:
             env = os.environ.copy()
             env['YDOTOOL_SOCKET'] = self.socket
             subprocess.run(
-                ['ydotool', 'click', ydo_btn],
+                [self.ydotool_path, 'click', ydo_btn],
                 env=env, capture_output=True, check=True
             )
             return True
@@ -181,7 +202,7 @@ class GnomeDriver(DesktopManager):
 
     def scroll(self, direction, clicks=1):
         """Performs scroll via ydotool."""
-        if not shutil.which('ydotool'):
+        if not self.ydotool_path:
             return
         try:
             env = os.environ.copy()
@@ -189,7 +210,7 @@ class GnomeDriver(DesktopManager):
             # ydotool mousemove uses --wheel for scroll
             value = clicks if direction == 'up' else -clicks
             subprocess.run(
-                ['ydotool', 'mousemove', '--wheel', '--',
+                [self.ydotool_path, 'mousemove', '--wheel', '--',
                  '0', str(value)],
                 env=env, capture_output=True, check=True
             )

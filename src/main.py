@@ -39,7 +39,12 @@ class LinuxTaskApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.manager = AutoDetectDriver()
-        self.title("LinuxTask v2.5.0 - Cinnamon Edition")
+        env_name = self.manager.__class__.__name__.replace("Driver", "")
+        if env_name == "X11": env_name = "X11 Edition"
+        elif env_name == "Gnome": env_name = "GNOME Edition"
+        elif env_name == "Hyprland": env_name = "Hyprland Edition"
+        else: env_name = f"{env_name} Edition"
+        self.title(f"LinuxTask v2.5.0 - {env_name}")
         self.geometry("420x50")
         self.attributes("-topmost", True)
         self.resizable(False, False)
@@ -49,6 +54,7 @@ class LinuxTaskApp(ctk.CTk):
         self.recording = False
         self.playing = False
         self.events = []
+        self.events_lock = threading.Lock()
         self.start_time = 0
         self.stop_threads = False
         self.loop_enabled = False
@@ -205,9 +211,10 @@ class LinuxTaskApp(ctk.CTk):
             dy = self._rel_accumulator.get('dy', 0)
             t = self._rel_accumulator.get('time', 0)
             if dx != 0 or dy != 0:
-                self.events.append({
-                    "type": "rel", "dx": dx, "dy": dy, "time": t
-                })
+                with self.events_lock:
+                    self.events.append({
+                        "type": "rel", "dx": dx, "dy": dy, "time": t
+                    })
             self._rel_accumulator = {}
 
     def device_loop(self, dev):
@@ -222,12 +229,13 @@ class LinuxTaskApp(ctk.CTk):
                     if event.code == e.REL_WHEEL:
                         self._flush_rel_accumulator()
                         direction = 'up' if event.value > 0 else 'down'
-                        self.events.append({
-                            "type": "scroll",
-                            "direction": direction,
-                            "clicks": abs(event.value),
-                            "time": now
-                        })
+                        with self.events_lock:
+                            self.events.append({
+                                "type": "scroll",
+                                "direction": direction,
+                                "clicks": abs(event.value),
+                                "time": now
+                            })
                         continue
 
                     # Accumulate REL_X/REL_Y into single event
@@ -264,7 +272,7 @@ class LinuxTaskApp(ctk.CTk):
                                 self.lbl_rec.configure(text=f"Record: {self.get_key_name(self.hotkey_rec)}", fg_color=['#3B8ED0', '#1F6AA5'])
                             else:
                                 self.lbl_play.configure(text=f"Play/Stop: {self.get_key_name(self.hotkey_play)}", fg_color=['#3B8ED0', '#1F6AA5'])
-                        except: pass
+                        except Exception: pass
 
                         self.is_mapping = None
                         continue
@@ -281,11 +289,12 @@ class LinuxTaskApp(ctk.CTk):
                         if event.code not in [
                             self.hotkey_rec, self.hotkey_play
                         ]:
-                            self.events.append({
-                                "type": "key", "code": event.code,
-                                "val": event.value,
-                                "time": time.time() - self.start_time
-                            })
+                            with self.events_lock:
+                                self.events.append({
+                                    "type": "key", "code": event.code,
+                                    "val": event.value,
+                                    "time": time.time() - self.start_time
+                                })
 
         except OSError as exc:
             logger.warning(
@@ -304,7 +313,8 @@ class LinuxTaskApp(ctk.CTk):
             return
         if not self.recording:
             self.recording = True
-            self.events = []
+            with self.events_lock:
+                self.events = []
             self._rel_accumulator = {}
             self.start_cursor_pos = self.manager.get_cursor_pos()
             self.start_time = time.time()
@@ -317,7 +327,9 @@ class LinuxTaskApp(ctk.CTk):
             self._flush_rel_accumulator()
             self.recording = False
             self.btn_rec.configure(text="⏺", fg_color="#d32f2f")
-            logger.info("Recording stopped. %d events captured.", len(self.events))
+            with self.events_lock:
+                ev_count = len(self.events)
+            logger.info("Recording stopped. %d events captured.", ev_count)
 
     def handle_play_key(self):
         """Handles play/stop hotkey press."""
@@ -328,8 +340,9 @@ class LinuxTaskApp(ctk.CTk):
 
     def start_playback(self):
         """Starts playback in a background thread."""
-        if self.recording or not self.events:
-            return
+        with self.events_lock:
+            if self.recording or not self.events:
+                return
         self.playing = True
         self.btn_play.configure(text="⏹", fg_color="#b71c1c")
         threading.Thread(target=self.playback_thread, daemon=True).start()
@@ -360,7 +373,10 @@ class LinuxTaskApp(ctk.CTk):
                 start_p = time.time()
                 speed = float(self.speed_var.get().replace("x", ""))
 
-                for i, ev in enumerate(self.events):
+                with self.events_lock:
+                    events_copy = list(self.events)
+
+                for i, ev in enumerate(events_copy):
                     if not self.playing:
                         break
 
@@ -377,8 +393,8 @@ class LinuxTaskApp(ctk.CTk):
                         dx, dy = ev['dx'], ev['dy']
                         # Calculate delay to next event for humanize
                         delay = 0
-                        if self.humanize_enabled.get() and i + 1 < len(self.events):
-                            delay = (self.events[i + 1]['time'] - ev['time']) / speed
+                        if self.humanize_enabled.get() and i + 1 < len(events_copy):
+                            delay = (events_copy[i + 1]['time'] - ev['time']) / speed
                         dx, dy, _ = self._apply_humanize(dx, dy, delay)
 
                         handled = self.manager.move_relative(dx, dy)
@@ -442,13 +458,15 @@ class LinuxTaskApp(ctk.CTk):
         )
         if f:
             try:
+                with self.events_lock:
+                    events_copy = list(self.events)
                 macro_data = {
                     "start_pos": self.start_cursor_pos,
-                    "events": self.events
+                    "events": events_copy
                 }
                 with open(f, 'w') as fp:
                     json.dump(macro_data, fp, indent=2)
-                logger.info("Macro saved to %s (%d events).", f, len(self.events))
+                logger.info("Macro saved to %s (%d events).", f, len(events_copy))
             except OSError as exc:
                 logger.error("Failed to save file: %s", exc)
 
@@ -463,16 +481,22 @@ class LinuxTaskApp(ctk.CTk):
                     data = json.load(fp)
                 # Support both new format (dict) and legacy (list)
                 if isinstance(data, dict):
-                    self.events = data.get("events", [])
+                    with self.events_lock:
+                        self.events = data.get("events", [])
                     pos = data.get("start_pos")
                     if pos and len(pos) == 2:
                         self.start_cursor_pos = tuple(pos)
                 else:
-                    self.events = data
+                    with self.events_lock:
+                        self.events = data
                     self.start_cursor_pos = None
+                
+                with self.events_lock:
+                    ev_count = len(self.events)
+                
                 logger.info(
                     "Macro loaded from %s (%d events, start_pos=%s).",
-                    f, len(self.events), self.start_cursor_pos
+                    f, ev_count, self.start_cursor_pos
                 )
             except (OSError, json.JSONDecodeError) as exc:
                 logger.error("Failed to load file: %s", exc)
