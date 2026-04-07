@@ -36,8 +36,8 @@ def get_current_version():
     
     with open(MAIN_PY_PATH, 'r') as f:
         content = f.read()
-        # Look for pattern self.title("LinuxTask vX.Y - ...")
-        match = re.search(r'self\.title\("LinuxTask v([\d\.]+) -', content)
+        # Look for pattern self.title(f"LinuxTask vX.Y.Z - {env_name}")
+        match = re.search(r'self\.title\(f"LinuxTask v([\d\.]+) -', content)
         if match:
             return match.group(1)
     
