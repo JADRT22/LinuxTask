@@ -272,7 +272,8 @@ class LinuxTaskApp(ctk.CTk):
                                 self.lbl_rec.configure(text=f"Record: {self.get_key_name(self.hotkey_rec)}", fg_color=['#3B8ED0', '#1F6AA5'])
                             else:
                                 self.lbl_play.configure(text=f"Play/Stop: {self.get_key_name(self.hotkey_play)}", fg_color=['#3B8ED0', '#1F6AA5'])
-                        except Exception: pass
+                        except Exception as exc:
+                            logger.debug("Failed to update button text during mapping: %s", exc)
 
                         self.is_mapping = None
                         continue

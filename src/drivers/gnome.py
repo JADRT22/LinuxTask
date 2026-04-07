@@ -27,6 +27,7 @@ class GnomeDriver(DesktopManager):
         self.uid = os.getuid()
         self.socket = f'/run/user/{self.uid}/.ydotool_socket'
         self.ensure_daemon()
+        self._tk_instance = None  # Cache for tkinter instance
 
     def _detect_resolution(self):
         """Dynamic resolution detection for GNOME/Wayland."""
@@ -131,9 +132,13 @@ class GnomeDriver(DesktopManager):
         
         try:
             import tkinter as tk
-            root = tk.Tk()
-            x, y = root.winfo_pointerx(), root.winfo_pointery()
-            root.destroy()
+            if self._tk_instance is None:
+                self._tk_instance = tk.Tk()
+                self._tk_instance.withdraw()  # Hide the window
+            
+            # Update must be called to get fresh coordinates in some environments
+            self._tk_instance.update()
+            x, y = self._tk_instance.winfo_pointerx(), self._tk_instance.winfo_pointery()
             return x, y
         except Exception as exc:
             logger.debug("get_cursor_pos (tkinter) failed: %s", exc)

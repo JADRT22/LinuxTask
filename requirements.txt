@@ -1,2 +1,2 @@
-customtkinter
-evdev
+customtkinter==5.2.2
+evdev==1.7.0
