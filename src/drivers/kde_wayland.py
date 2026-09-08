@@ -32,6 +32,29 @@ class KdeWaylandDriver(DesktopManager):
         self._portal_init()
 
     def _detect_resolution(self):
+        # Prefer kscreen-doctor (native Wayland); xrandr only mirrors
+        # XWayland and may be absent. kscreen marks the active mode
+        # with '*' and uses ANSI colors, so strip escapes first.
+        try:
+            out = subprocess.check_output(
+                ['kscreen-doctor', '-o'],
+                stderr=subprocess.DEVNULL, timeout=5
+            ).decode()
+            out = re.sub(r'\x1b\[[0-9;]*m', '', out)
+            for line in out.splitlines():
+                # The active mode is the resolution immediately before
+                # '*', e.g. '5:1600x900@59.95*'. A plain 'x' search would
+                # grab the first mode on the line instead.
+                m = re.search(r'(\d+)x(\d+)@[0-9.]*\*', line)
+                if m:
+                    self._screen_width = int(m.group(1))
+                    self._screen_height = int(m.group(2))
+                    logger.info(
+                        "Resolution (kscreen): %dx%d",
+                        self._screen_width, self._screen_height)
+                    return
+        except Exception as exc:
+            logger.debug("kscreen-doctor failed: %s", exc)
         try:
             out = subprocess.check_output(
                 ['xrandr'], stderr=subprocess.DEVNULL, timeout=2
@@ -181,20 +204,50 @@ class KdeWaylandDriver(DesktopManager):
             return int(parts['x']), int(parts['y'])
         except Exception as exc:
             logger.debug("xdotool getmouselocation failed: %s", exc)
-        return 0, 0
+        # xdotool needs XWayland; without it fall back to our last
+        # known position instead of poisoning callers with (0, 0).
+        self._lazy_init_tracked_pos()
+        return self._cur_x, self._cur_y
+
+    def _clamp(self, x, y):
+        return (
+            max(0, min(int(x), self._screen_width - 1)),
+            max(0, min(int(y), self._screen_height - 1))
+        )
 
     def move_cursor(self, x, y):
         if not self._portal_ready:
             return
         try:
-            dx = int(x) - self._cur_x
-            dy = int(y) - self._cur_y
+            # Re-sync with the real cursor before computing the delta:
+            # the user may have moved the physical mouse since our last
+            # tracked move, and the portal only accepts relative motion.
+            self._sync_tracked_pos()
+            cx, cy = self._clamp(x, y)
+            dx = cx - self._cur_x
+            dy = cy - self._cur_y
+            if dx == 0 and dy == 0:
+                return
             self._portal.NotifyPointerMotion(
                 dbus.ObjectPath(self._session_handle), {}, dx, dy
             )
-            self._cur_x, self._cur_y = int(x), int(y)
+            self._cur_x, self._cur_y = cx, cy
         except Exception as exc:
             logger.error("Portal move_cursor failed: %s", exc)
+
+    def _sync_tracked_pos(self):
+        """Best-effort refresh of the tracked position from the system."""
+        try:
+            out = subprocess.check_output(
+                ['xdotool', 'getmouselocation'],
+                stderr=subprocess.DEVNULL, timeout=2
+            ).decode().strip()
+            parts = dict(p.split(':') for p in out.split() if ':' in p)
+            self._cur_x, self._cur_y = int(parts['x']), int(parts['y'])
+            self._pos_initialized = True
+        except Exception as exc:
+            logger.debug("tracked-pos sync failed: %s", exc)
+            self._lazy_init_tracked_pos()
 
     def move_relative(self, dx, dy):
         if not self._portal_ready:
@@ -233,9 +286,17 @@ class KdeWaylandDriver(DesktopManager):
         if self._pos_initialized:
             return
         self._pos_initialized = True
-        actual = self.get_cursor_pos()
-        if actual != (0, 0):
-            self._cur_x, self._cur_y = actual
+        # Inline xdotool read (not via get_cursor_pos: that falls back
+        # to this method, so calling it here would recurse forever).
+        try:
+            out = subprocess.check_output(
+                ['xdotool', 'getmouselocation'],
+                stderr=subprocess.DEVNULL, timeout=2
+            ).decode().strip()
+            parts = dict(p.split(':') for p in out.split() if ':' in p)
+            self._cur_x, self._cur_y = int(parts['x']), int(parts['y'])
+        except Exception:
+            logger.debug("no live position available; tracking from (0, 0)")
 
     def scroll(self, direction, clicks=1):
         """Performs scroll via portal. Returns True if handled."""
