@@ -198,7 +198,7 @@ class KdeWaylandDriver(DesktopManager):
 
     def move_relative(self, dx, dy):
         if not self._portal_ready:
-            return True
+            return False
         try:
             self._lazy_init_tracked_pos()
             self._portal.NotifyPointerMotion(
@@ -238,15 +238,18 @@ class KdeWaylandDriver(DesktopManager):
             self._cur_x, self._cur_y = actual
 
     def scroll(self, direction, clicks=1):
+        """Performs scroll via portal. Returns True if handled."""
         if not self._portal_ready:
-            return
+            return False
         dy = clicks * 3.0 if direction == 'down' else -clicks * 3.0
         try:
             self._portal.NotifyPointerAxis(
                 dbus.ObjectPath(self._session_handle), {}, 0.0, dy
             )
+            return True
         except Exception as exc:
             logger.debug("Portal scroll failed: %s", exc)
+            return False
 
     def self_test(self):
         print("--- KDE Wayland Driver Self-Test ---")

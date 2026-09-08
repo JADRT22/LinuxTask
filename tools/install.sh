@@ -6,7 +6,13 @@ set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$APP_DIR")"
-USER_HOME=$(eval echo "~$USER")
+# Real (non-root) user, even when invoked via pkexec/sudo from run.sh.
+REAL_USER="${SUDO_USER:-}"
+if [ -z "$REAL_USER" ] && [ -n "${PKEXEC_UID:-}" ]; then
+    REAL_USER="$(id -nu "$PKEXEC_UID" 2>/dev/null || true)"
+fi
+REAL_USER="${REAL_USER:-${LOGNAME:-$USER}}"
+USER_HOME=$(eval echo "~$REAL_USER")
 DESKTOP_DIR="$USER_HOME/.local/share/applications"
 UDEV_RULE_PATH="/etc/udev/rules.d/99-linuxtask.rules"
 
@@ -84,7 +90,7 @@ ABS_RUN_PATH=$(realpath "$APP_DIR/run.sh")
 cat > "$DESKTOP_DIR/linuxtask.desktop" <<EOF
 [Desktop Entry]
 Name=LinuxTask
-Comment=Minimalist Macro Recorder (Cinnamon Edition)
+Comment=Minimalist Macro Recorder for Linux
 Exec=$ABS_RUN_PATH
 Icon=$ABS_ICON_PATH
 Terminal=false
@@ -104,8 +110,8 @@ fi
 echo "[INFO] Configuring permanent permissions (requires sudo)..."
 sudo cp "$APP_DIR/99-linuxtask.rules" "$UDEV_RULE_PATH"
 
-# 6. Add user to input group
-sudo gpasswd -a "$USER" input
+# 6. Add real user to input group
+sudo gpasswd -a "$REAL_USER" input
 
 # 7. Reload udev rules
 sudo udevadm control --reload-rules && sudo udevadm trigger
@@ -120,9 +126,9 @@ if ! command -v setfacl >/dev/null 2>&1; then
 fi
 
 if command -v setfacl >/dev/null 2>&1; then
-    sudo setfacl -m "u:$USER:rw" /dev/uinput
+    sudo setfacl -m "u:$REAL_USER:rw" /dev/uinput
     for dev in /dev/input/event*; do
-        [ -e "$dev" ] && sudo setfacl -m "u:$USER:rw" "$dev"
+        [ -e "$dev" ] && sudo setfacl -m "u:$REAL_USER:rw" "$dev"
     done
 fi
 

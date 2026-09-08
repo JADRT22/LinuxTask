@@ -55,5 +55,8 @@ class DesktopManager(ABC):
         Args:
             direction: 'up' or 'down'.
             clicks: number of scroll steps.
+
+        Returns:
+            True if handled by driver, False to fall back to UInput.
         """
-        pass
+        return False

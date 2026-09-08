@@ -89,6 +89,7 @@ class X11Driver(DesktopManager):
                 return False
 
     def scroll(self, direction, clicks=1):
+        """Performs scroll via XTest. Returns True if handled."""
         button = 4 if direction == 'up' else 5
         with self._lock:
             try:
@@ -96,8 +97,10 @@ class X11Driver(DesktopManager):
                     self.display.xtest_fake_input(X.ButtonPress, detail=button)
                     self.display.xtest_fake_input(X.ButtonRelease, detail=button)
                 self.display.sync()
+                return True
             except Exception as exc:
                 logger.error("scroll(%s, %d) failed: %s", direction, clicks, exc)
+                return False
 
     def self_test(self):
         print("--- X11Driver Self-Test ---")
