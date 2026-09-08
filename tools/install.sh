@@ -107,7 +107,7 @@ sudo cp "$APP_DIR/99-linuxtask.rules" "$UDEV_RULE_PATH"
 # 6. Add user to input group
 sudo gpasswd -a "$USER" input
 
-# 6. Reload udev rules
+# 7. Reload udev rules
 sudo udevadm control --reload-rules && sudo udevadm trigger
 
 # 7. Grant IMMEDIATE access (avoids logout/login on first run)

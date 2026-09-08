@@ -48,10 +48,21 @@ def AutoDetectDriver():
             logger.info("Detected environment: GNOME on X11")
             return X11Driver()
 
-    # X11-based desktops: Cinnamon, MATE, XFCE, KDE on X11, etc.
+    if "KDE" in current_desktop:
+        session_type = os.environ.get("XDG_SESSION_TYPE", "").lower()
+        if session_type == "wayland":
+            from .kde_wayland import KdeWaylandDriver
+            logger.info("Detected environment: KDE Wayland")
+            return KdeWaylandDriver()
+        else:
+            from .x11 import X11Driver
+            logger.info("Detected environment: KDE on X11")
+            return X11Driver()
+
+    # X11-based desktops: Cinnamon, MATE, XFCE, etc.
     x11_desktops = [
         "X-CINNAMON", "CINNAMON", "MATE", "XFCE", "LXDE",
-        "LXQT", "BUDGIE", "PANTHEON", "UNITY", "KDE"
+        "LXQT", "BUDGIE", "PANTHEON", "UNITY"
     ]
     for desktop in x11_desktops:
         if desktop in current_desktop:
@@ -75,6 +86,6 @@ def AutoDetectDriver():
     # 4. No supported environment detected
     raise RuntimeError(
         f"Unsupported desktop environment: '{current_desktop}'. "
-        f"LinuxTask requires X11 (xdotool), Hyprland (hyprctl), "
-        f"or GNOME Wayland (ydotool)."
+        f"LinuxTask requires X11, KDE Wayland, Hyprland, "
+        f"or GNOME Wayland."
     )

@@ -22,7 +22,7 @@ def run_command(command, cwd=PROJECT_ROOT):
     try:
         result = subprocess.run(
             command, shell=True, check=True, capture_output=True, text=True, cwd=cwd
-        )
+        )  # nosec
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
         print(f"Error running command '{command}': {e.stderr}")

@@ -32,21 +32,23 @@ class GnomeDriver(DesktopManager):
     def _detect_resolution(self):
         """Dynamic resolution detection for GNOME/Wayland."""
         # Try xrandr first (covers XWayland scenarios)
+        import re
         try:
             out = subprocess.check_output(
                 ['xrandr'], stderr=subprocess.STDOUT
             ).decode()
             for line in out.splitlines():
                 if '*' in line:
-                    w, h = line.split()[0].split('x')
-                    self.screen_width, self.screen_height = int(w), int(h)
-                    return
+                    match = re.search(r'(\d+)x(\d+)', line)
+                    if match:
+                        self.screen_width = int(match.group(1))
+                        self.screen_height = int(match.group(2))
+                        return
         except (subprocess.CalledProcessError, FileNotFoundError) as exc:
             logger.debug("xrandr failed: %s", exc)
 
         # Fallback: Query org.gnome.Mutter.DisplayConfig via gdbus
         try:
-            import re
             cmd = [
                 'gdbus', 'call', '--session', '--dest',
                 'org.gnome.Mutter.DisplayConfig',
@@ -96,8 +98,8 @@ class GnomeDriver(DesktopManager):
 
         # Socket is stale or missing — clean up and restart
         try:
-            if os.path.exists(self.socket):
-                os.remove(self.socket)
+            if os.path.exists(self.socket) and not os.path.islink(self.socket):
+                os.unlink(self.socket)
         except OSError as exc:
             logger.warning("Could not remove stale socket: %s", exc)
 
@@ -177,12 +179,7 @@ class GnomeDriver(DesktopManager):
             return False
 
     def mouse_button(self, button, pressed):
-        """Handles mouse button via ydotool click.
-        Note: ydotool 'click' does press+release. We use it as a fallback.
-        """
-        if not pressed:
-            return False # ydotool click handles both, so we 'handle' it on press
-
+        """Handles mouse button via ydotool mousedown/mouseup."""
         # evdev: 272=LEFT, 273=RIGHT, 274=MIDDLE
         # ydotool: 0x40=LEFT, 0x41=RIGHT, 0x42=MIDDLE
         ydo_btn = None
@@ -193,16 +190,17 @@ class GnomeDriver(DesktopManager):
         if not ydo_btn or not self.ydotool_path:
             return False
 
+        action = 'mousedown' if pressed else 'mouseup'
         try:
             env = os.environ.copy()
             env['YDOTOOL_SOCKET'] = self.socket
             subprocess.run(
-                [self.ydotool_path, 'click', ydo_btn],
+                [self.ydotool_path, action, ydo_btn],
                 env=env, capture_output=True, check=True
             )
             return True
         except subprocess.CalledProcessError as exc:
-            logger.error("ydotool click failed: %s", exc)
+            logger.error("ydotool %s failed: %s", action, exc)
             return False
 
     def scroll(self, direction, clicks=1):

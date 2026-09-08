@@ -10,7 +10,7 @@ import evdev
 import os
 
 def test_access():
-    print(f"User: {os.getlogin()}")
+    print(f"User: {os.getenv('USER', 'unknown')}")
     print("Testing access to input devices...")
     try:
         devices = [evdev.InputDevice(path) for path in evdev.list_devices()]

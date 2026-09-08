@@ -44,13 +44,21 @@ if [ "$SESSION_TYPE" = "wayland" ] && echo "$DESKTOP" | grep -qi "gnome"; then
 fi
 
 # 3. Quick dependency check — install if missing
-python3 -c "import customtkinter, evdev" 2>/dev/null || {
+PYTHON_BIN="python3"
+if [ -d "$REPO_ROOT/venv" ]; then
+    PYTHON_BIN="$REPO_ROOT/venv/bin/python3"
+fi
+$PYTHON_BIN -c "import customtkinter, evdev" 2>/dev/null || {
     echo "[INFO] Installing missing Python dependencies..."
-    pip3 install --user customtkinter evdev 2>/dev/null || \
-    python3 -m pip install --user customtkinter evdev 2>/dev/null || {
-        echo "[ERROR] Failed to install dependencies. Run: pip3 install customtkinter evdev"
-        exit 1
-    }
+    if [ -d "$REPO_ROOT/venv" ]; then
+        "$REPO_ROOT/venv/bin/pip" install customtkinter evdev
+    else
+        pip3 install --user customtkinter evdev 2>/dev/null || \
+        python3 -m pip install --user customtkinter evdev 2>/dev/null || {
+            echo "[ERROR] Failed to install dependencies. Run: pip3 install customtkinter evdev"
+            exit 1
+        }
+    fi
 }
 
 # 4. Run the application
