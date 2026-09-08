@@ -31,8 +31,54 @@ import random
 import threading
 import json
 import os
+import queue
 from tkinter import filedialog
 from drivers.factory import AutoDetectDriver
+
+APP_VERSION = "2.6.0"
+
+
+class ToolTip:
+    """Minimal hover tooltip (customtkinter has no built-in one).
+
+    Shows a small top-level label while the mouse hovers the widget.
+    Used so emoji-only toolbar buttons stay understandable when the
+    emoji font is missing (issue #3).
+    """
+
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip = None
+        widget.bind("<Enter>", self._show, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+
+    def _show(self, _event=None):
+        if self.tip is not None:
+            return
+        try:
+            x = self.widget.winfo_rootx() + 10
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+            self.tip = tip = __import__("tkinter").Toplevel(self.widget)
+            tip.wm_overrideredirect(True)
+            tip.wm_geometry(f"+{x}+{y}")
+            label = __import__("tkinter").Label(
+                tip, text=self.text, background="#222222",
+                foreground="white", relief="solid", borderwidth=1,
+                font=("Arial", 9), padx=6, pady=2,
+            )
+            label.pack()
+        except Exception:
+            self.tip = None
+
+    def _hide(self, _event=None):
+        try:
+            if self.tip is not None:
+                self.tip.destroy()
+        except Exception:
+            pass
+        finally:
+            self.tip = None
 
 
 class LinuxTaskApp(ctk.CTk):
@@ -44,7 +90,7 @@ class LinuxTaskApp(ctk.CTk):
         elif env_name == "Gnome": env_name = "GNOME Edition"
         elif env_name == "Hyprland": env_name = "Hyprland Edition"
         else: env_name = f"{env_name} Edition"
-        self.title(f"LinuxTask v2.5.0 - {env_name}")
+        self.title(f"LinuxTask v{APP_VERSION} - {env_name}")
         self.geometry("420x50")
         self.attributes("-topmost", True)
         self.resizable(False, False)
@@ -63,6 +109,11 @@ class LinuxTaskApp(ctk.CTk):
         self.hotkey_play = 67  # F9
         self.is_mapping = None
         self.uinput_device = None
+        # Thread-safe queue: evdev listener threads push "rec" / "play" /
+        # "play_finished" actions here; the UI thread consumes them via
+        # _poll_hotkeys(). Never call tkinter methods (after/configure)
+        # directly from listener/playback threads.
+        self._ui_queue = queue.Queue()
         self._rel_accumulator = {}  # Accumulates REL_X/REL_Y per timestamp
         self.start_cursor_pos = None  # Saved cursor pos at recording start
         self.init_uinput()
@@ -75,21 +126,23 @@ class LinuxTaskApp(ctk.CTk):
         }
 
         # Define buttons in a list for DRY creation
+        # (text, tooltip, fg, hover, command)
         buttons_cfg = [
-            ("📂", "#333333", "#444444", self.open_file),
-            ("💾", "#333333", "#444444", self.save_file),
-            ("⏺", "#d32f2f", "#b71c1c", self.toggle_record),
-            ("⏵", "#388e3c", "#1b5e20", self.handle_play_key),
-            ("🔁", "#333333", "#444444", self.toggle_loop)
+            ("📂", "Open macro", "#333333", "#444444", self.open_file),
+            ("💾", "Save macro", "#333333", "#444444", self.save_file),
+            ("⏺", "Record (F8)", "#d32f2f", "#b71c1c", self.toggle_record),
+            ("⏵", "Play / Stop (F9)", "#388e3c", "#1b5e20", self.handle_play_key),
+            ("🔁", "Loop playback", "#333333", "#444444", self.toggle_loop)
         ]
 
         self.btns = []
-        for i, (txt, fg, hov, cmd) in enumerate(buttons_cfg):
+        for i, (txt, tip, fg, hov, cmd) in enumerate(buttons_cfg):
             btn = ctk.CTkButton(
                 self, text=txt, fg_color=fg, hover_color=hov,
                 command=cmd, **btn_opts
             )
             btn.grid(row=0, column=i, padx=2, pady=2)
+            ToolTip(btn, tip)
             self.btns.append(btn)
 
         # Assign references to specific buttons we need to update late
@@ -109,10 +162,32 @@ class LinuxTaskApp(ctk.CTk):
             width=30, command=self.open_settings
         )
         self.btn_settings.grid(row=0, column=6, padx=2, pady=2)
+        ToolTip(self.btn_settings, "Settings")
+        ToolTip(self.speed_menu, "Playback speed")
 
+        self.after(50, self._poll_hotkeys)
         threading.Thread(
             target=self.global_hardware_listener, daemon=True
         ).start()
+
+    def _poll_hotkeys(self):
+        """Runs on the UI thread: consumes actions queued by workers."""
+        try:
+            while True:
+                action = self._ui_queue.get_nowait()
+                if action == "rec":
+                    self.toggle_record()
+                elif action == "play":
+                    self.handle_play_key()
+                elif action == "play_finished":
+                    self.btn_play.configure(text="⏵", fg_color="#388e3c")
+        except queue.Empty:
+            pass
+        finally:
+            try:
+                self.after(50, self._poll_hotkeys)
+            except Exception:
+                pass
 
     def init_uinput(self):
         """Initializes a virtual UInput device for key replay."""
@@ -278,15 +353,17 @@ class LinuxTaskApp(ctk.CTk):
                         self.is_mapping = None
                         continue
 
-                    # Global hotkeys (on key press only)
+                    # Global hotkeys (on key press only).
+                    # NOTE: never touch tkinter here — this runs on an evdev
+                    # listener thread. Push to the queue; UI polls it.
                     if event.value == 1:
                         if event.code == self.hotkey_rec:
-                            self.after(0, self.toggle_record)
+                            self._ui_queue.put("rec")
                         elif event.code == self.hotkey_play:
-                            self.after(0, self.handle_play_key)
+                            self._ui_queue.put("play")
 
                     # Record key events (excluding hotkeys)
-                    if self.recording and not self.stop_threads:
+                    if self.recording:
                         if event.code not in [
                             self.hotkey_rec, self.hotkey_play
                         ]:
@@ -403,11 +480,30 @@ class LinuxTaskApp(ctk.CTk):
                             self.uinput_device.write(e.EV_REL, e.REL_X, dx)
                             self.uinput_device.write(e.EV_REL, e.REL_Y, dy)
                             self.uinput_device.syn()
+                        elif not handled:
+                            logger.warning(
+                                "Relative move (%d, %d) dropped: driver "
+                                "declined and UInput unavailable.", dx, dy
+                            )
 
                     elif ev['type'] == "scroll":
-                        self.manager.scroll(
+                        handled = self.manager.scroll(
                             ev['direction'], ev.get('clicks', 1)
                         )
+                        if not handled:
+                            if self.uinput_device is not None:
+                                wheel = 1 if ev['direction'] == 'up' else -1
+                                for _ in range(ev.get('clicks', 1)):
+                                    self.uinput_device.write(
+                                        e.EV_REL, e.REL_WHEEL, wheel
+                                    )
+                                self.uinput_device.syn()
+                            else:
+                                logger.warning(
+                                    "Scroll (%s x%d) dropped: driver "
+                                    "declined and UInput unavailable.",
+                                    ev['direction'], ev.get('clicks', 1)
+                                )
 
                     elif ev['type'] == "key":
                         # Try to let the desktop manager handle mouse clicks first
@@ -437,12 +533,8 @@ class LinuxTaskApp(ctk.CTk):
             logger.error("Playback error: %s", exc)
         finally:
             self.playing = False
-            self.after(
-                0,
-                lambda: self.btn_play.configure(
-                    text="⏵", fg_color="#388e3c"
-                )
-            )
+            # UI reset via queue (this runs on a worker thread).
+            self._ui_queue.put("play_finished")
 
     def get_key_name(self, code):
         """Returns human-readable key name from evdev code."""

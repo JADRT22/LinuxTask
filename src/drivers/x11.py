@@ -124,8 +124,10 @@ class X11Driver(DesktopManager):
                 ['xdotool', 'click', '--repeat', str(clicks), button],
                 capture_output=True, check=True
             )
+            return True
         except subprocess.CalledProcessError as exc:
             logger.error("scroll(%s, %d) failed: %s", direction, clicks, exc)
+            return False
 
     def self_test(self):
         """Performs driver verification."""

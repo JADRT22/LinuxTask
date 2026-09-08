@@ -86,17 +86,15 @@ class HyprlandDriver(DesktopManager):
             return False
 
     def scroll(self, direction, clicks=1):
-        """Performs scroll via hyprctl dispatch."""
-        try:
-            # Hyprland doesn't have native scroll dispatch;
-            # use the virtual UInput from main.py instead.
-            # This is a no-op placeholder — scroll is handled by UInput.
-            logger.debug(
-                "Hyprland scroll (%s, %d) — handled by UInput.",
-                direction, clicks
-            )
-        except Exception as exc:
-            logger.error("scroll failed: %s", exc)
+        """Scroll is handled by the virtual UInput device (see main.py).
+
+        Returns False so the caller falls back to UInput REL_WHEEL events.
+        """
+        logger.debug(
+            "Hyprland scroll (%s, %d) — delegating to UInput fallback.",
+            direction, clicks
+        )
+        return False
 
     def self_test(self):
         """Performs driver verification."""

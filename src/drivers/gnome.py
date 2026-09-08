@@ -8,6 +8,7 @@ License: MIT
 
 import subprocess
 import shutil
+import atexit
 import os
 import time
 import logging
@@ -28,6 +29,16 @@ class GnomeDriver(DesktopManager):
         self.socket = f'/run/user/{self.uid}/.ydotool_socket'
         self.ensure_daemon()
         self._tk_instance = None  # Cache for tkinter instance
+        atexit.register(self._destroy_tk)
+
+    def _destroy_tk(self):
+        """Destroys the cached tkinter instance, if any."""
+        try:
+            if self._tk_instance is not None:
+                self._tk_instance.destroy()
+                self._tk_instance = None
+        except Exception:
+            pass
 
     def _detect_resolution(self):
         """Dynamic resolution detection for GNOME/Wayland."""
@@ -108,7 +119,8 @@ class GnomeDriver(DesktopManager):
             )
             for _ in range(30):
                 if os.path.exists(self.socket):
-                    os.chmod(self.socket, 0o666)
+                    # 0o600: only the owner can inject input through this socket.
+                    os.chmod(self.socket, 0o600)
                     logger.info("ydotoold started with socket: %s", self.socket)
                     return
                 time.sleep(0.1)
@@ -146,14 +158,17 @@ class GnomeDriver(DesktopManager):
         return 0, 0
 
     def move_cursor(self, x, y):
-        """Absolute cursor positioning is not supported on GNOME Wayland.
+        """Emulates absolute positioning via a relative delta.
 
-        Use move_relative() instead.
+        GNOME Wayland has no absolute cursor API, so read the current
+        position and move relatively. Returns nothing; failures are logged
+        by move_relative().
         """
-        logger.warning(
-            "move_cursor() is not supported on GNOME Wayland. "
-            "Use move_relative() instead."
-        )
+        try:
+            cur_x, cur_y = self.get_cursor_pos()
+            self.move_relative(int(x) - int(cur_x), int(y) - int(cur_y))
+        except Exception as exc:
+            logger.error("move_cursor(%s, %s) failed: %s", x, y, exc)
 
     def move_relative(self, dx, dy):
         """Moves cursor by relative offset using ydotool."""
@@ -206,9 +221,9 @@ class GnomeDriver(DesktopManager):
             return False
 
     def scroll(self, direction, clicks=1):
-        """Performs scroll via ydotool."""
+        """Performs scroll via ydotool. Returns True if handled."""
         if not self.ydotool_path:
-            return
+            return False
         try:
             env = os.environ.copy()
             env['YDOTOOL_SOCKET'] = self.socket
@@ -219,5 +234,7 @@ class GnomeDriver(DesktopManager):
                  '0', str(value)],
                 env=env, capture_output=True, check=True
             )
+            return True
         except subprocess.CalledProcessError as exc:
             logger.error("ydotool scroll failed: %s", exc)
+            return False
