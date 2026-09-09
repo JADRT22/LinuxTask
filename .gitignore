@@ -14,3 +14,7 @@ recordings/
 # System files
 .DS_Store
 Thumbs.db
+
+# AppImage build outputs
+build/
+squashfs-root/

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "linuxtask"
+version = "2.6.0"
+description = "Minimalist Macro Recorder for Linux"
+requires-python = ">=3.10"
+dependencies = [
+    "customtkinter",
+    "evdev",
+    "python-xlib",
+]
+
+[project.scripts]
+linuxtask = "linuxtask_main:main"
+
+[tool.setuptools]
+py-modules = ["linuxtask_main"]
+packages = ["drivers"]
+
+[tool.appimage]
+app = "LinuxTask"
+entry_point = "linuxtask"
+python = "3.12"
+icon = "icon.png"
