@@ -219,10 +219,12 @@ class KdeWaylandDriver(DesktopManager):
         if not self._portal_ready:
             return
         try:
-            # Re-sync with the real cursor before computing the delta:
-            # the user may have moved the physical mouse since our last
-            # tracked move, and the portal only accepts relative motion.
-            self._sync_tracked_pos()
+            # Dead reckoning: compute the delta from our own tracked
+            # position, NOT from xdotool. XWayland never reports our
+            # synthetic moves back, so re-reading it here would compute
+            # every delta from a stale origin and the cursor would
+            # fight itself (jump forward, snap back). Re-sync happens
+            # once per playback in sync_for_playback(), not per move.
             cx, cy = self._clamp(x, y)
             dx = cx - self._cur_x
             dy = cy - self._cur_y
@@ -248,6 +250,10 @@ class KdeWaylandDriver(DesktopManager):
         except Exception as exc:
             logger.debug("tracked-pos sync failed: %s", exc)
             self._lazy_init_tracked_pos()
+
+    def sync_for_playback(self):
+        """One-time position re-sync, called when a replay starts."""
+        self._sync_tracked_pos()
 
     def move_relative(self, dx, dy):
         if not self._portal_ready:

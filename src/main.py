@@ -448,6 +448,7 @@ class LinuxTaskApp(ctk.CTk):
             return
         with self.events_lock:
             if not self.events:
+                logger.warning("Play pressed with no events recorded.")
                 return
         self.playing = True
         self.btn_play.configure(text="⏹", fg_color="#b71c1c")
@@ -483,6 +484,18 @@ class LinuxTaskApp(ctk.CTk):
 
                 with self.events_lock:
                     events_copy = list(self.events)
+                logger.info(
+                    "Playback started: %d events at %sx.",
+                    len(events_copy), speed,
+                )
+                # Let the driver re-sync its tracked position once
+                # (drivers that need it implement sync_for_playback).
+                sync = getattr(self.manager, "sync_for_playback", None)
+                if callable(sync):
+                    try:
+                        sync()
+                    except Exception as exc:
+                        logger.debug("sync_for_playback failed: %s", exc)
 
                 for i, ev in enumerate(events_copy):
                     if not self.playing:
