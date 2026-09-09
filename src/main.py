@@ -126,17 +126,21 @@ class LinuxTaskApp(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
         btn_opts = {
             "width": 40, "height": 40,
-            "font": ("Noto Color Emoji", 16), "corner_radius": 5
+            # NOTE: must be a monochrome outline font. Tk cannot render
+            # color-bitmap emoji (e.g. Noto Color Emoji) -- buttons show
+            # up as pixelated tofu boxes. All glyphs below are covered
+            # by DejaVu Sans, which ships with virtually every distro.
+            "font": ("DejaVu Sans", 16), "corner_radius": 5
         }
 
         # Define buttons in a list for DRY creation
         # (text, tooltip, fg, hover, command)
         buttons_cfg = [
-            ("📂", "Open macro", "#333333", "#444444", self.open_file),
-            ("💾", "Save macro", "#333333", "#444444", self.save_file),
-            ("⏺", "Record (F8)", "#d32f2f", "#b71c1c", self.toggle_record),
-            ("⏵", "Play / Stop (F9)", "#388e3c", "#1b5e20", self.handle_play_key),
-            ("🔁", "Loop playback", "#333333", "#444444", self.toggle_loop)
+            ("Open", "Open macro", "#333333", "#444444", self.open_file),
+            ("Save", "Save macro", "#333333", "#444444", self.save_file),
+            ("●", "Record (F8)", "#d32f2f", "#b71c1c", self.toggle_record),
+            ("▶", "Play / Stop (F9)", "#388e3c", "#1b5e20", self.handle_play_key),
+            ("↻", "Loop playback", "#333333", "#444444", self.toggle_loop)
         ]
 
         self.btns = []
@@ -153,6 +157,9 @@ class LinuxTaskApp(ctk.CTk):
         self.btn_rec = self.btns[2]
         self.btn_play = self.btns[3]
         self.btn_loop = self.btns[4]
+        # Text labels need a smaller font to fit the 40px buttons.
+        self.btns[0].configure(font=("DejaVu Sans", 11))
+        self.btns[1].configure(font=("DejaVu Sans", 11))
 
         self.speed_var = ctk.StringVar(value="1x")
         self.speed_menu = ctk.CTkOptionMenu(
@@ -163,7 +170,7 @@ class LinuxTaskApp(ctk.CTk):
 
         self.btn_settings = ctk.CTkButton(
             self, text="⚙", fg_color="transparent", hover_color="#222222",
-            width=30, command=self.open_settings
+            width=30, font=("DejaVu Sans", 16), command=self.open_settings
         )
         self.btn_settings.grid(row=0, column=6, padx=2, pady=2)
         ToolTip(self.btn_settings, "Settings")
@@ -184,7 +191,7 @@ class LinuxTaskApp(ctk.CTk):
                 elif action == "play":
                     self.handle_play_key()
                 elif action == "play_finished":
-                    self.btn_play.configure(text="⏵", fg_color="#388e3c")
+                    self.btn_play.configure(text="▶", fg_color="#388e3c")
         except queue.Empty:
             pass
         finally:
@@ -264,7 +271,8 @@ class LinuxTaskApp(ctk.CTk):
         """Toggles loop playback mode."""
         self.loop_enabled = not self.loop_enabled
         self.btn_loop.configure(
-            text="🔁" if not self.loop_enabled else "🔂",
+            # Loop state is shown by color (blue = on), so one glyph suffices.
+            text="↻",
             fg_color="#1976d2" if self.loop_enabled else "#333333"
         )
 
@@ -421,14 +429,14 @@ class LinuxTaskApp(ctk.CTk):
                 self.events = []
             self.start_cursor_pos = self.manager.get_cursor_pos()
             self.start_time = time.time()
-            self.btn_rec.configure(text="⏹", fg_color="#b71c1c")
+            self.btn_rec.configure(text="■", fg_color="#b71c1c")
             logger.info(
                 "Recording started. Start pos: %s",
                 self.start_cursor_pos
             )
         else:
             self.recording = False
-            self.btn_rec.configure(text="⏺", fg_color="#d32f2f")
+            self.btn_rec.configure(text="●", fg_color="#d32f2f")
             with self.events_lock:
                 ev_count = len(self.events)
             logger.info("Recording stopped. %d events captured.", ev_count)
@@ -451,7 +459,7 @@ class LinuxTaskApp(ctk.CTk):
                 logger.warning("Play pressed with no events recorded.")
                 return
         self.playing = True
-        self.btn_play.configure(text="⏹", fg_color="#b71c1c")
+        self.btn_play.configure(text="■", fg_color="#b71c1c")
         threading.Thread(target=self.playback_thread, daemon=True).start()
 
     def _apply_humanize(self, dx, dy, delay):
