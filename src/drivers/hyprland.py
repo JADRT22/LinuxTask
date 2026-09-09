@@ -50,36 +50,65 @@ class HyprlandDriver(DesktopManager):
         logger.warning("Using fallback resolution: 1920x1080")
 
     def get_cursor_pos(self):
-        """Returns current (x, y) coordinates via hyprctl."""
+        """Returns current (x, y) coordinates via hyprctl.
+
+        Unlike xdotool-on-XWayland, hyprctl reports synthetic moves
+        back truthfully, so this is safe to call between moves.
+        """
         try:
             out = subprocess.check_output(
                 ["hyprctl", "cursorpos"],
                 stderr=subprocess.DEVNULL
             ).decode().strip()
-            x, y = out.split(", ")
+            x, y = [p.strip() for p in out.split(",")]
             return int(x), int(y)
         except (subprocess.CalledProcessError, FileNotFoundError,
                 ValueError) as exc:
             logger.error("get_cursor_pos failed: %s", exc)
             return 0, 0
 
+    def _clamp(self, x, y):
+        return (
+            max(0, min(int(x), self.screen_width - 1)),
+            max(0, min(int(y), self.screen_height - 1))
+        )
+
     def move_cursor(self, x, y):
-        """Moves cursor to absolute coordinates."""
+        """Moves cursor to absolute coordinates.
+
+        Hyprland >= 0.55 uses Lua dispatchers
+        (hl.dsp.cursor.move); older releases use the legacy
+        'dispatch movecursor X Y' form. Try new first.
+        """
+        cx, cy = self._clamp(x, y)
         try:
+            out = subprocess.run(
+                ["hyprctl", "dispatch",
+                 "hl.dsp.cursor.move({ x = %d, y = %d })" % (cx, cy)],
+                capture_output=True, text=True, check=False,
+            )
+            if out.stdout.strip() == "ok":
+                return
+            logger.debug(
+                "new-style dispatch failed (%r), trying legacy",
+                out.stdout.strip(),
+            )
             subprocess.run(
-                ["hyprctl", "dispatch", "movecursor", f"{x} {y}"],
-                capture_output=True, check=True
+                ["hyprctl", "dispatch", "movecursor", f"{cx} {cy}"],
+                capture_output=True, check=True,
             )
         except subprocess.CalledProcessError as exc:
-            logger.error("move_cursor(%d, %d) failed: %s", x, y, exc)
+            logger.error("move_cursor(%d, %d) failed: %s", cx, cy, exc)
 
     def move_relative(self, dx, dy):
-        """Moves cursor by relative offset via hyprctl."""
+        """Moves cursor by relative offset via hyprctl.
+
+        Reads the live position first (hyprctl reports synthetic
+        moves truthfully) and delegates to the absolute move.
+        """
         try:
             pos = self.get_cursor_pos()
-            new_x = max(0, min(pos[0] + dx, self.screen_width - 1))
-            new_y = max(0, min(pos[1] + dy, self.screen_height - 1))
-            self.move_cursor(new_x, new_y)
+            self.move_cursor(pos[0] + dx, pos[1] + dy)
             return True
         except Exception as exc:
             logger.error("move_relative(%d, %d) failed: %s", dx, dy, exc)

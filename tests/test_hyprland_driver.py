@@ -55,12 +55,32 @@ class TestHyprlandDriver(unittest.TestCase):
     @patch('subprocess.check_output')
     def test_move_cursor(self, mock_output, mock_run):
         mock_output.return_value = b'[]'  # __init__
-        mock_run.return_value = MagicMock(returncode=0)
+        mock_run.return_value = MagicMock(stdout="ok\n", returncode=0)
 
         driver = HyprlandDriver()
         driver.move_cursor(500, 600)
 
         mock_run.assert_called_once_with(
+            ["hyprctl", "dispatch",
+             "hl.dsp.cursor.move({ x = 500, y = 600 })"],
+            capture_output=True, text=True, check=False
+        )
+
+    @patch('subprocess.run')
+    @patch('subprocess.check_output')
+    def test_move_cursor_legacy_fallback(self, mock_output, mock_run):
+        mock_output.return_value = b'[]'  # __init__
+        # New-style dispatch fails -> falls back to legacy syntax.
+        mock_run.side_effect = [
+            MagicMock(stdout="error: nope", returncode=1),
+            MagicMock(returncode=0),
+        ]
+
+        driver = HyprlandDriver()
+        driver.move_cursor(500, 600)
+
+        self.assertEqual(mock_run.call_count, 2)
+        mock_run.assert_called_with(
             ["hyprctl", "dispatch", "movecursor", "500 600"],
             capture_output=True, check=True
         )
@@ -73,15 +93,16 @@ class TestHyprlandDriver(unittest.TestCase):
             b'[]',       # monitors for __init__
             b'100, 200'  # cursorpos for move_relative
         ]
-        mock_run.return_value = MagicMock(returncode=0)
+        mock_run.return_value = MagicMock(stdout="ok\n", returncode=0)
 
         driver = HyprlandDriver()
         driver.move_relative(10, -5)
 
         # Should call move_cursor with (110, 195)
         mock_run.assert_called_once_with(
-            ["hyprctl", "dispatch", "movecursor", "110 195"],
-            capture_output=True, check=True
+            ["hyprctl", "dispatch",
+             "hl.dsp.cursor.move({ x = 110, y = 195 })"],
+            capture_output=True, text=True, check=False
         )
 
     @patch('subprocess.check_call')
