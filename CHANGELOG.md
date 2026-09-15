@@ -4,7 +4,7 @@ All notable changes to the LinuxTask project will be documented in this file.
 (Single canonical changelog: updated by hand and prepended automatically by
 `tools/release.py`.)
 
-## [2.6.1] - 2026-09-15
+## [3.0.0] - 2026-09-15
 
 ### Added
 - **KDE Wayland Support**: new driver using the Portal RemoteDesktop interface
