@@ -6,10 +6,41 @@ Author: JADRT22 (https://github.com/JADRT22)
 License: MIT
 """
 
+import importlib.util
 import os
 import logging
 
 logger = logging.getLogger(__name__)
+
+# python-xlib is pip-installable (requirements.txt), but users who skip
+# requirements.txt (e.g. manual installs) deserve a clear message too.
+_XLIB_HINT = (
+    "pip3 install --user python-xlib  (or distro package: "
+    "apt install python3-xlib / pacman -S python-xlib / "
+    "dnf install python3-xlib)"
+)
+
+# dbus-python and PyGObject need C headers to build from PyPI, so they
+# must come from the distro, not pip. See tools/install.sh step 1.
+_DBUS_HINT = (
+    "install the system packages: "
+    "apt install python3-dbus python3-gi / pacman -S python-dbus python-gobject / "
+    "dnf install python3-dbus python3-gobject"
+)
+
+
+def _ensure_importable(module: str, hint: str) -> None:
+    """Raise a friendly RuntimeError if `module` cannot be imported."""
+    try:
+        spec = importlib.util.find_spec(module)
+    except (ImportError, ValueError):
+        # Broken installation / missing parent package: treat as absent.
+        spec = None
+    if spec is None:
+        raise RuntimeError(
+            f"Missing dependency '{module}' for this desktop environment. "
+            f"To fix: {hint}"
+        )
 
 
 def AutoDetectDriver():
@@ -44,6 +75,7 @@ def AutoDetectDriver():
             logger.info("Detected environment: GNOME Wayland")
             return GnomeDriver()
         else:
+            _ensure_importable("Xlib", _XLIB_HINT)
             from .x11 import X11Driver
             logger.info("Detected environment: GNOME on X11")
             return X11Driver()
@@ -51,10 +83,15 @@ def AutoDetectDriver():
     if "KDE" in current_desktop:
         session_type = os.environ.get("XDG_SESSION_TYPE", "").lower()
         if session_type == "wayland":
+            # KDE Wayland uses the Portal RemoteDesktop via dbus-python
+            # and a GLib main loop from PyGObject.
+            _ensure_importable("dbus", _DBUS_HINT)
+            _ensure_importable("gi", _DBUS_HINT)
             from .kde_wayland import KdeWaylandDriver
             logger.info("Detected environment: KDE Wayland")
             return KdeWaylandDriver()
         else:
+            _ensure_importable("Xlib", _XLIB_HINT)
             from .x11 import X11Driver
             logger.info("Detected environment: KDE on X11")
             return X11Driver()
@@ -66,6 +103,7 @@ def AutoDetectDriver():
     ]
     for desktop in x11_desktops:
         if desktop in current_desktop:
+            _ensure_importable("Xlib", _XLIB_HINT)
             from .x11 import X11Driver
             logger.info(
                 "Detected environment: %s (X11 driver)",
@@ -75,6 +113,7 @@ def AutoDetectDriver():
 
     # 3. Generic X11 fallback
     if os.environ.get("DISPLAY"):
+        _ensure_importable("Xlib", _XLIB_HINT)
         from .x11 import X11Driver
         logger.warning(
             "Unknown desktop '%s' but DISPLAY is set. "

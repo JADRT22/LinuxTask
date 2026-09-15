@@ -28,17 +28,12 @@ cp "$REPO_ROOT/assets/icon.png" "$PROJ/"
 cp "$REPO_ROOT/tools/appimage/pyproject.toml" "$PROJ/"
 cp "$REPO_ROOT/tools/appimage/LinuxTask.desktop" "$PROJ/"
 
-# Entry point: expose main() for the console script.
+# Entry point: main.py defines main() directly (used by the
+# linuxtask console script via pyproject.toml).
 python3 - <<'EOF'
 import os
-import re
 p = os.path.join(os.environ["PROJ"], "linuxtask_main.py")
 src = open(p).read()
-src = src.replace(
-    'if __name__ == "__main__":\n    app = LinuxTaskApp()\n    app.mainloop()',
-    'def main():\n    app = LinuxTaskApp()\n    app.mainloop()\n\n\n'
-    'if __name__ == "__main__":\n    main()',
-)
 # ASCII toolbar labels (bundled Tk has no symbol fonts).
 subs = [
     ('("●",', '("REC",'),

@@ -15,7 +15,15 @@ from datetime import datetime
 # Configuration
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAIN_PY_PATH = os.path.join(PROJECT_ROOT, 'src', 'main.py')
-CHANGELOG_PATH = os.path.join(PROJECT_ROOT, 'docs', 'CHANGELOG.md')
+PYPROJECT_PATH = os.path.join(PROJECT_ROOT, 'tools', 'appimage', 'pyproject.toml')
+# Single canonical changelog at the repository root (docs/CHANGELOG.md was
+# merged into it and removed).
+CHANGELOG_PATH = os.path.join(PROJECT_ROOT, 'CHANGELOG.md')
+
+# Single source of truth for the version: the APP_VERSION constant in
+# src/main.py (the window title interpolates it, so parsing the title
+# no longer works).
+APP_VERSION_RE = re.compile(r'^APP_VERSION\s*=\s*["\']([\d\.]+)["\']', re.MULTILINE)
 
 def run_command(command, cwd=PROJECT_ROOT):
     """Run a shell command and return its output."""
@@ -29,19 +37,18 @@ def run_command(command, cwd=PROJECT_ROOT):
         sys.exit(1)
 
 def get_current_version():
-    """Extract current version from src/main.py."""
+    """Extract current version from the APP_VERSION constant in src/main.py."""
     if not os.path.exists(MAIN_PY_PATH):
         print(f"Error: {MAIN_PY_PATH} not found.")
         sys.exit(1)
     
     with open(MAIN_PY_PATH, 'r') as f:
         content = f.read()
-        # Look for pattern self.title(f"LinuxTask vX.Y.Z - {env_name}")
-        match = re.search(r'self\.title\(f"LinuxTask v([\d\.]+) -', content)
+        match = APP_VERSION_RE.search(content)
         if match:
             return match.group(1)
     
-    print("Error: Could not find version in src/main.py.")
+    print("Error: Could not find APP_VERSION constant in src/main.py.")
     sys.exit(1)
 
 def bump_version(current_version, bump_type):
@@ -65,19 +72,36 @@ def bump_version(current_version, bump_type):
     return '.'.join(map(str, parts))
 
 def update_source_version(new_version):
-    """Update version string in src/main.py."""
+    """Update the APP_VERSION constant in src/main.py and mirror it to
+    tools/appimage/pyproject.toml so AppImage builds don't drift."""
     with open(MAIN_PY_PATH, 'r') as f:
         content = f.read()
     
-    new_content = re.sub(
-        r'self\.title\("LinuxTask v[\d\.]+ -',
-        f'self.title("LinuxTask v{new_version} -',
-        content
+    new_content, n = APP_VERSION_RE.subn(
+        f'APP_VERSION = "{new_version}"', content
     )
+    if n == 0:
+        print("Error: APP_VERSION constant not found in src/main.py; nothing updated.")
+        sys.exit(1)
     
     with open(MAIN_PY_PATH, 'w') as f:
         f.write(new_content)
     print(f"Updated {MAIN_PY_PATH} to version {new_version}")
+    
+    if os.path.exists(PYPROJECT_PATH):
+        with open(PYPROJECT_PATH, 'r') as f:
+            pp = f.read()
+        pp_new, n_pp = re.subn(
+            r'^(version\s*=\s*)["\'][\d\.]+["\']',
+            f'\\g<1>"{new_version}"',
+            pp, count=1, flags=re.MULTILINE
+        )
+        if n_pp:
+            with open(PYPROJECT_PATH, 'w') as f:
+                f.write(pp_new)
+            print(f"Updated {PYPROJECT_PATH} to version {new_version}")
+        else:
+            print(f"Warning: no version key found in {PYPROJECT_PATH}.")
 
 def get_commits_since_last_tag():
     """Get list of commits since the last tag."""
@@ -130,7 +154,8 @@ def format_changelog_entry(version, commits):
 
 
 def update_changelog_file(entry):
-    """Prepend new entry to docs/CHANGELOG.md."""
+    """Prepend a new entry to the root CHANGELOG.md, inserting it before
+    the most recent version heading so the file intro stays on top."""
     if not os.path.exists(CHANGELOG_PATH):
         with open(CHANGELOG_PATH, 'w') as f:
             f.write("# Changelog\n\n" + entry)
@@ -139,15 +164,15 @@ def update_changelog_file(entry):
     with open(CHANGELOG_PATH, 'r') as f:
         lines = f.readlines()
     
-    # Find position after the title
-    insert_pos = 0
+    # Insert before the first '## [x.y.z]' heading (not right after the
+    # title: the file has an intro paragraph below it).
+    insert_pos = len(lines)
     for i, line in enumerate(lines):
-        if line.strip().startswith('# Changelog'):
-            insert_pos = i + 1
+        if line.startswith('## ['):
+            insert_pos = i
             break
     
-    # Add spacing
-    new_lines = lines[:insert_pos] + ["\n", entry + "\n"] + lines[insert_pos:]
+    new_lines = lines[:insert_pos] + [entry + "\n", "\n"] + lines[insert_pos:]
     
     with open(CHANGELOG_PATH, 'w') as f:
         f.writelines(new_lines)
@@ -234,7 +259,7 @@ def main():
     
     # Phase 3: Git operations
     print("Staging changes...")
-    run_command("git add src/main.py docs/CHANGELOG.md")
+    run_command("git add src/main.py tools/appimage/pyproject.toml CHANGELOG.md")
     print(f"Committing release v{new_version}...")
     run_command(f'git commit -m "chore: release v{new_version}"')
     print(f"Tagging release v{new_version}...")

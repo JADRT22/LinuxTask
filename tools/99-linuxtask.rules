@@ -1,2 +1,8 @@
+# LinuxTask udev permissions.
+# - uinput: read/write — the app creates a virtual device for input replay.
+# - event*: READ-ONLY — macro recording only listens. Input injection never
+#   writes to real devices (it goes through /dev/uinput or compositor APIs),
+#   so 0440 avoids handing every 'input' group process write access to the
+#   machine's physical keyboards (a full keylogging/injection primitive).
 KERNEL=="uinput", GROUP="input", MODE="0660"
-KERNEL=="event*", GROUP="input", MODE="0660"
+KERNEL=="event*", GROUP="input", MODE="0440"

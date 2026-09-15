@@ -1,3 +1,11 @@
+# Core pip dependencies
 customtkinter==6.0.0
 evdev==1.9.3
 python-xlib==0.33
+
+# NOT pip-installable on most systems (need C headers + libs).
+# Installed from the distro by tools/install.sh instead:
+#   Debian/Ubuntu/Mint : sudo apt install python3-dbus python3-gi
+#   Arch/CachyOS       : sudo pacman -S python-dbus python-gobject
+#   Fedora             : sudo dnf install python3-dbus python3-gobject
+# Required only for KDE Wayland (Portal RemoteDesktop driver).

@@ -43,19 +43,33 @@ if [ "$SESSION_TYPE" = "wayland" ] && echo "$DESKTOP" | grep -qi "gnome"; then
     export YDOTOOL_SOCKET="/run/user/$(id -u)/.ydotool_socket"
 fi
 
-# 3. Quick dependency check — install if missing
 PYTHON_BIN="python3"
 if [ -d "$REPO_ROOT/venv" ]; then
     PYTHON_BIN="$REPO_ROOT/venv/bin/python3"
 fi
-$PYTHON_BIN -c "import customtkinter, evdev" 2>/dev/null || {
+
+# KDE Wayland: warn about distro-only Python D-Bus bindings.
+# dbus-python/PyGObject are NOT pip-installable (need C headers) and are
+# provided by install.sh via the package manager.
+if [ "$SESSION_TYPE" = "wayland" ] && echo "$DESKTOP" | grep -qi "kde"; then
+    if ! "$PYTHON_BIN" -c "import dbus, gi" 2>/dev/null; then
+        echo "[WARN] KDE Wayland needs python3-dbus and python3-gi (distro packages)."
+        echo "       Run ./tools/install.sh to install them, or manually:"
+        echo "         apt install python3-dbus python3-gi"
+        echo "         pacman -S python-dbus python-gobject"
+        echo "         dnf install python3-dbus python3-gobject"
+    fi
+fi
+
+# Quick pip dependency check — install if missing
+$PYTHON_BIN -c "import customtkinter, evdev, Xlib" 2>/dev/null || {
     echo "[INFO] Installing missing Python dependencies..."
     if [ -d "$REPO_ROOT/venv" ]; then
-        "$REPO_ROOT/venv/bin/pip" install customtkinter evdev
+        "$REPO_ROOT/venv/bin/pip" install customtkinter evdev python-xlib
     else
-        pip3 install --user customtkinter evdev 2>/dev/null || \
-        python3 -m pip install --user customtkinter evdev 2>/dev/null || {
-            echo "[ERROR] Failed to install dependencies. Run: pip3 install customtkinter evdev"
+        pip3 install --user customtkinter evdev python-xlib 2>/dev/null || \
+        python3 -m pip install --user customtkinter evdev python-xlib 2>/dev/null || {
+            echo "[ERROR] Failed to install dependencies. Run: pip3 install customtkinter evdev python-xlib"
             exit 1
         }
     fi

@@ -18,3 +18,8 @@ Thumbs.db
 # AppImage build outputs
 build/
 squashfs-root/
+
+# Compiled binaries from experiments (must never ship in src/ or the AppImage)
+*.o
+*.so
+experimental/libei/ei_send

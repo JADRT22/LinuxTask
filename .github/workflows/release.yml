@@ -22,10 +22,10 @@ jobs:
       - name: Generate Release Notes
         id: release_notes
         run: |
-          # Extract last entry from CHANGELOG.md or use git log
-          if [ -d docs/CHANGELOG.md ]; then
-            # Extract content between the first two ## headers
-            sed -n '/^## \[[v0-9.]*\]/,/^## \[[v0-9.]*\]/p' docs/CHANGELOG.md | sed '$d' > release_notes.md
+          # Extract the most recent entry (up to the next version heading)
+          # from the root CHANGELOG.md, or fall back to git log.
+          if [ -f CHANGELOG.md ]; then
+            sed -n '/^## \[[v0-9.]*\]/,/^## \[[v0-9.]*\]/p' CHANGELOG.md | sed '$d' > release_notes.md
           fi
           if [ ! -s release_notes.md ]; then
             git log --oneline -n 10 > release_notes.md

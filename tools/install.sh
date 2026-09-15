@@ -45,6 +45,24 @@ install_package() {
     esac
 }
 
+# dbus-python + PyGObject cannot be built from PyPI without system headers,
+# so they MUST come from the distro. Only needed for KDE Wayland.
+install_dbus_python_deps() {
+    local mgr
+    mgr=$(detect_pkg_manager)
+    echo "[INFO] Installing system Python D-Bus bindings (needed on KDE Wayland)..."
+    case "$mgr" in
+        apt)    install_package python3-dbus && install_package python3-gi ;;
+        pacman) install_package python-dbus && install_package python-gobject ;;
+        dnf)    install_package python3-dbus && install_package python3-gobject ;;
+        *)
+            echo "[WARN] Unknown package manager: install python3-dbus and"
+            echo "       python3-gi (or equivalent) manually if you use KDE Wayland."
+            return 1
+            ;;
+    esac
+}
+
 echo "🚀 Iniciando instalação do LinuxTask..."
 
 # 0. Install Python dependencies
@@ -53,19 +71,23 @@ if [ -f "$REPO_ROOT/requirements.txt" ]; then
     pip3 install --user -r "$REPO_ROOT/requirements.txt" 2>/dev/null || \
     python3 -m pip install --user -r "$REPO_ROOT/requirements.txt" 2>/dev/null || {
         echo "[WARN] pip install from requirements.txt failed. Trying individually..."
-        pip3 install --user customtkinter evdev 2>/dev/null || \
-        python3 -m pip install --user customtkinter evdev 2>/dev/null || {
+        pip3 install --user customtkinter evdev python-xlib 2>/dev/null || \
+        python3 -m pip install --user customtkinter evdev python-xlib 2>/dev/null || {
             echo "[ERROR] Could not install Python dependencies."
-            echo "        Please install manually: pip3 install customtkinter evdev"
+            echo "        Please install manually: pip3 install customtkinter evdev python-xlib"
         }
     }
 else
-    pip3 install --user customtkinter evdev 2>/dev/null || \
-    python3 -m pip install --user customtkinter evdev 2>/dev/null || {
+    pip3 install --user customtkinter evdev python-xlib 2>/dev/null || \
+    python3 -m pip install --user customtkinter evdev python-xlib 2>/dev/null || {
         echo "[ERROR] Could not install Python dependencies."
-        echo "        Please install manually: pip3 install customtkinter evdev"
+        echo "        Please install manually: pip3 install customtkinter evdev python-xlib"
     }
 fi
+
+# 0.1 Distro-provided D-Bus bindings for the KDE Wayland driver.
+# Best-effort: not fatal on non-KDE desktops.
+install_dbus_python_deps || true
 
 # Also ensure xdotool is available (needed for X11 desktops like Cinnamon)
 if ! command -v xdotool >/dev/null 2>&1; then
@@ -126,9 +148,11 @@ if ! command -v setfacl >/dev/null 2>&1; then
 fi
 
 if command -v setfacl >/dev/null 2>&1; then
+    # uinput needs write (virtual device for replay); event* devices are
+    # read-only (recording only) to avoid granting input injection rights.
     sudo setfacl -m "u:$REAL_USER:rw" /dev/uinput
     for dev in /dev/input/event*; do
-        [ -e "$dev" ] && sudo setfacl -m "u:$REAL_USER:rw" "$dev"
+        [ -e "$dev" ] && sudo setfacl -m "u:$REAL_USER:r" "$dev"
     done
 fi
 

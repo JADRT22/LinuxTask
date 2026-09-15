@@ -3,7 +3,8 @@
 # fix_linuxtask_perms.sh
 # Script to fix permissions for LinuxTask macro recorder.
 # Compatible with: apt (Debian/Ubuntu/Mint), pacman (Arch), dnf (Fedora)
-# Grants read/write access to /dev/input/event* and /dev/uinput for the current user.
+# Grants read access to /dev/input/event* (recording) and read/write to
+# /dev/uinput (replay) for the current user.
 
 set -euo pipefail
 
@@ -89,9 +90,10 @@ fi
 # For all /dev/input/event* devices
 if ls /dev/input/event* >/dev/null 2>&1; then
     for dev in /dev/input/event*; do
-        [ -e "$dev" ] && sudo setfacl -m "u:$USER:rw" "$dev"
+        # Read-only: recording only listens; injection goes through /dev/uinput.
+        [ -e "$dev" ] && sudo setfacl -m "u:$USER:r" "$dev"
     done
-    echo -e "${GREEN}ACL applied to /dev/input/event* devices${NC}"
+    echo -e "${GREEN}ACL applied (read-only) to /dev/input/event* devices${NC}"
 else
     echo -e "${RED}Warning: No /dev/input/event* devices found.${NC}"
 fi

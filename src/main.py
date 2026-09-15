@@ -20,10 +20,14 @@ try:
     import evdev
     from evdev import ecodes as e
 except ImportError:
-    print("Error: Missing dependencies (customtkinter or evdev).",
+    print("Error: Missing core dependencies (customtkinter or evdev).",
           file=sys.stderr)
-    print("Please run install.sh or install python-customtkinter "
-          "via your package manager.", file=sys.stderr)
+    print("X11 users also need python-xlib; a missing per-environment "
+          "dependency is reported with exact instructions by the "
+          "driver factory.", file=sys.stderr)
+    print("Please run install.sh or install them via pip: "
+          "pip3 install --user customtkinter evdev python-xlib",
+          file=sys.stderr)
     sys.exit(1)
 
 import time
@@ -35,7 +39,7 @@ import queue
 from tkinter import filedialog
 from drivers.factory import AutoDetectDriver
 
-APP_VERSION = "2.6.0"
+APP_VERSION = "2.6.1"
 
 
 class ToolTip:
@@ -84,7 +88,18 @@ class ToolTip:
 class LinuxTaskApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.manager = AutoDetectDriver()
+        try:
+            self.manager = AutoDetectDriver()
+        except RuntimeError as exc:
+            # Missing system deps (e.g. python3-dbus on KDE Wayland) or an
+            # unsupported desktop. Show a visible dialog, not a traceback.
+            logger.error("Driver initialization failed: %s", exc)
+            try:
+                import tkinter.messagebox as mb
+                mb.showerror("LinuxTask - Initialization failed", str(exc))
+            except Exception:
+                pass
+            sys.exit(1)
         env_name = self.manager.__class__.__name__.replace("Driver", "")
         if env_name == "X11": env_name = "X11 Edition"
         elif env_name == "Gnome": env_name = "GNOME Edition"
@@ -110,6 +125,11 @@ class LinuxTaskApp(ctk.CTk):
         self.hotkey_play = 67  # F9
         self.is_mapping = None
         self.uinput_device = None
+        # Pending relative-motion accumulators. Written from evdev listener
+        # threads and reset in toggle_record(); initialized here so no code
+        # path depends on toggle_record() having run first.
+        self._rel_dx = 0
+        self._rel_dy = 0
         self._rel_dirty = False
         self._processed_ids = set()
         self._processed_ids_lock = threading.Lock()
@@ -325,7 +345,8 @@ class LinuxTaskApp(ctk.CTk):
                 # --- Mouse movement: record absolute or relative ---
                 if event.type == e.EV_REL and self.recording:
                     if event.code == e.REL_WHEEL:
-                        now = time.time() - self.start_time
+                        # monotonic: immune to NTP adjustments/DST jumps.
+                        now = time.monotonic() - self.start_time
                         direction = 'up' if event.value > 0 else 'down'
                         with self.events_lock:
                             self.events.append({
@@ -343,7 +364,7 @@ class LinuxTaskApp(ctk.CTk):
 
                 if event.type == e.EV_SYN and self.recording and self._rel_dirty:
                     self._rel_dirty = False
-                    now = time.time() - self.start_time
+                    now = time.monotonic() - self.start_time
                     if self.manager.supports_absolute_positioning:
                         pos = self.manager.get_cursor_pos()
                         with self.events_lock:
@@ -400,7 +421,7 @@ class LinuxTaskApp(ctk.CTk):
                                 self.events.append({
                                     "type": "key", "code": event.code,
                                     "val": event.value,
-                                    "time": time.time() - self.start_time
+                                    "time": time.monotonic() - self.start_time
                                 })
 
         except OSError as exc:
@@ -428,7 +449,9 @@ class LinuxTaskApp(ctk.CTk):
             with self.events_lock:
                 self.events = []
             self.start_cursor_pos = self.manager.get_cursor_pos()
-            self.start_time = time.time()
+            # monotonic: event timestamps below are deltas from this base,
+            # so a clock jump mid-recording must not skew them.
+            self.start_time = time.monotonic()
             self.btn_rec.configure(text="■", fg_color="#b71c1c")
             logger.info(
                 "Recording started. Start pos: %s",
@@ -484,7 +507,7 @@ class LinuxTaskApp(ctk.CTk):
                             "Could not reset cursor position: %s", exc
                         )
 
-                start_p = time.time()
+                start_p = time.monotonic()
                 try:
                     speed = float(self.speed_var.get().replace("x", ""))
                 except (ValueError, AttributeError):
@@ -510,7 +533,7 @@ class LinuxTaskApp(ctk.CTk):
                         break
 
                     target_time = start_p + (ev['time'] / speed)
-                    remaining = target_time - time.time()
+                    remaining = target_time - time.monotonic()
                     if remaining > 0:
                         threading.Event().wait(remaining)
 
@@ -661,6 +684,11 @@ class LinuxTaskApp(ctk.CTk):
                 logger.error("Failed to load file: %s", exc)
 
 
-if __name__ == "__main__":
+def main():
+    """Entry point (also used by the AppImage console script)."""
     app = LinuxTaskApp()
     app.mainloop()
+
+
+if __name__ == "__main__":
+    main()
