@@ -107,7 +107,8 @@ class LinuxTaskApp(ctk.CTk):
         elif env_name == "Hyprland": env_name = "Hyprland Edition"
         else: env_name = f"{env_name} Edition"
         self.title(f"LinuxTask v{APP_VERSION} - {env_name}")
-        self.geometry("420x50")
+        # Compact toolbar (TinyTask-inspired): 400x44 instead of 420x50.
+        self.geometry("400x44")
         self.attributes("-topmost", True)
         self.resizable(False, False)
         ctk.set_appearance_mode("dark")
@@ -145,12 +146,12 @@ class LinuxTaskApp(ctk.CTk):
         self.grid_columnconfigure(list(range(7)), weight=1)
         self.grid_rowconfigure(0, weight=1)
         btn_opts = {
-            "width": 40, "height": 40,
+            "width": 32, "height": 32,
             # NOTE: must be a monochrome outline font. Tk cannot render
             # color-bitmap emoji (e.g. Noto Color Emoji) -- buttons show
             # up as pixelated tofu boxes. All glyphs below are covered
             # by DejaVu Sans, which ships with virtually every distro.
-            "font": ("DejaVu Sans", 16), "corner_radius": 5
+            "font": ("DejaVu Sans", 14), "corner_radius": 5
         }
 
         # Define buttons in a list for DRY creation
@@ -177,20 +178,20 @@ class LinuxTaskApp(ctk.CTk):
         self.btn_rec = self.btns[2]
         self.btn_play = self.btns[3]
         self.btn_loop = self.btns[4]
-        # Text labels need a smaller font to fit the 40px buttons.
-        self.btns[0].configure(font=("DejaVu Sans", 11))
-        self.btns[1].configure(font=("DejaVu Sans", 11))
+        # Text labels need a smaller font to fit the 32px buttons.
+        self.btns[0].configure(font=("DejaVu Sans", 10))
+        self.btns[1].configure(font=("DejaVu Sans", 10))
 
         self.speed_var = ctk.StringVar(value="1x")
         self.speed_menu = ctk.CTkOptionMenu(
             self, values=["0.5x", "1x", "2x", "4x", "10x"],
-            variable=self.speed_var, width=60, height=25, font=("Arial", 10)
+            variable=self.speed_var, width=56, height=24, font=("Arial", 10)
         )
         self.speed_menu.grid(row=0, column=5, padx=2, pady=2)
 
         self.btn_settings = ctk.CTkButton(
             self, text="⚙", fg_color="transparent", hover_color="#222222",
-            width=30, font=("DejaVu Sans", 16), command=self.open_settings
+            width=26, font=("DejaVu Sans", 14), command=self.open_settings
         )
         self.btn_settings.grid(row=0, column=6, padx=2, pady=2)
         ToolTip(self.btn_settings, "Settings")

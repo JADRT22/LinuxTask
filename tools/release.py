@@ -154,8 +154,9 @@ def format_changelog_entry(version, commits):
 
 
 def update_changelog_file(entry):
-    """Prepend a new entry to the root CHANGELOG.md, inserting it before
-    the most recent version heading so the file intro stays on top."""
+    """Prepend a new entry to the root CHANGELOG.md, inserting it below the
+    hand-written '[Unreleased]' section (if present) and above the most
+    recent version heading, so the file intro and pending notes stay on top."""
     if not os.path.exists(CHANGELOG_PATH):
         with open(CHANGELOG_PATH, 'w') as f:
             f.write("# Changelog\n\n" + entry)
@@ -164,11 +165,13 @@ def update_changelog_file(entry):
     with open(CHANGELOG_PATH, 'r') as f:
         lines = f.readlines()
     
-    # Insert before the first '## [x.y.z]' heading (not right after the
-    # title: the file has an intro paragraph below it).
+    # Insert before the first '## [x.y.z]' heading that is NOT
+    # '[Unreleased]': pending hand-written notes keep their place above
+    # the new release entry.
     insert_pos = len(lines)
     for i, line in enumerate(lines):
-        if line.startswith('## ['):
+        if (line.startswith('## [')
+                and not line.startswith('## [Unreleased]')):
             insert_pos = i
             break
     

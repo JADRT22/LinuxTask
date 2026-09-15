@@ -2,7 +2,16 @@
 
 All notable changes to the LinuxTask project will be documented in this file.
 (Single canonical changelog: updated by hand and prepended automatically by
-`tools/release.py`.)
+`tools/release.py`. The `[Unreleased]` section collects changes since the
+last release; `release.py` inserts new version headings below it.)
+
+## [Unreleased]
+
+### Changed
+- **Compact Toolbar**: window reduced from 420x50 to 400x44 with 32px buttons
+  and tighter spacing (TinyTask-inspired density). All controls stay on the
+  toolbar: Open/Save labels shrink to 10px, the speed selector (0.5x-10x) and
+  settings gear keep their places, and hover tooltips remain.
 
 ## [3.0.0] - 2026-09-15
 
