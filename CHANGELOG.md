@@ -12,6 +12,13 @@ All notable changes to the LinuxTask project will be documented in this file.
 - **Reproducible AppImage Build**: `tools/appimage/build.sh` stages and patches
   the source for python-build-standalone (ASCII toolbar labels for the bundled
   Tk).
+- **Core Flow Test Suite**: new `tests/test_main_flow.py` with 38 headless
+  unit tests for the heart of `main.py` (no display or hardware needed): event
+  deduplication across devices, recording of keys/scroll/relative and absolute
+  motion with `EV_SYN` flush, hotkey mapping and exclusion, humanize jitter
+  bounds, playback dispatch with UInput fallback, speed scaling and stop
+  interruption, macro validation and save/load roundtrip, and the thread-safe
+  hotkey queue. Added to the CI workflow (`python-app.yml`).
 
 ### Fixed
 - **Missing Dependency Crashes**: `factory.py` now checks for `Xlib` (X11) and
