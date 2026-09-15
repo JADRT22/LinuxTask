@@ -14,7 +14,7 @@ device or the native APIs of your compositor, which sidesteps the input
 injection restrictions that Wayland compositors impose on traditional X11
 automation tools.
 
-![LinuxTask demo](assets/demo.png)
+![LinuxTask demo](assets/demo-v3.png)
 
 ## Features
 
