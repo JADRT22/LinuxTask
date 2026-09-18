@@ -7,6 +7,24 @@ last release; `release.py` inserts new version headings below it.)
 
 ## [Unreleased]
 
+### Added
+- **Visual Trigger Add-on (optional)**: new `experimental/` directory with
+  screen-recognition scripts — `image_click/` (find an image on screen and
+  click it: grim capture + NCC matcher in pure numpy) and `color_spin/`
+  (click-in-loop until a target color appears, with an anti-false-positive
+  stability guard for animated roulettes, double confirmation and a
+  compact CustomTkinter GUI with a live log and start/stop buttons).
+  Ships with its own **independent installer** (`experimental/install.sh`):
+  it only adds numpy/Pillow, grim/slurp and desktop shortcuts, touches
+  nothing in the app, and `--remove` cleans the shortcuts. The main
+  LinuxTask install does NOT include or require any of this.
+- New reusable modules `src/vision.py` (NCC template matching,
+  `color_fraction`) and `src/capture.py` (grim/slurp backend,
+  `wait_region_stable`) — used only by the addon scripts; the app itself
+  has no new dependency. Headless tests in
+  `tests/test_experimental_addons.py` (run manually, not part of the
+  CI suite).
+
 ### Changed
 - **Compact Toolbar**: window reduced from 420x50 to 400x44 with 32px buttons
   and tighter spacing (TinyTask-inspired density). All controls stay on the

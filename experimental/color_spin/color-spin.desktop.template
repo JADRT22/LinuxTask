@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Color Spin (auto-girar)
+Comment=Assistente visual: clica em loop até a cor rara aparecer
+Exec=@LAUNCHER@
+Icon=@ICON@
+Path=@CWD@
+Terminal=false
+Categories=Utility;
+StartupNotify=true

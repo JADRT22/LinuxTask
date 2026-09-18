@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Color Spin (parar)
+Comment=Interrompe o loop de cliques do assistente
+Exec=@STOP@
+Icon=@ICON@
+Path=@CWD@
+Terminal=false
+Categories=Utility;
+StartupNotify=true
