@@ -39,7 +39,7 @@ import queue
 from tkinter import filedialog
 from drivers.factory import AutoDetectDriver
 
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.0.1"
 
 
 class ToolTip:

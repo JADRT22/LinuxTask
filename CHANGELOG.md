@@ -31,6 +31,20 @@ last release; `release.py` inserts new version headings below it.)
   toolbar: Open/Save labels shrink to 10px, the speed selector (0.5x-10x) and
   settings gear keep their places, and hover tooltips remain.
 
+## [v3.0.1] - 2026-10-01
+### ✨ New Features
+- feat: optional visual-trigger addon (image_click + color_spin) with independent installer
+### 🛠️ Other Changes
+- docs: bloco 'Copie e rode em 30s' com quickstart de 1 linha
+- docs: SEO EN+PT + quickstart
+- docs: banner cross-link pro perfil JADRT22
+- docs: rename demo asset to bust camo cache
+- docs: update demo screenshot to current toolbar
+- docs: rewrite CONTRIBUTING in README style
+- docs: rewrite README for v3.0.0 accuracy and professional tone
+- ui: compact TinyTask-style toolbar, Unreleased-aware release script
+
+
 ## [3.0.0] - 2026-09-15
 
 ### Added
