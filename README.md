@@ -1,5 +1,7 @@
 # LinuxTask
 
+> 👤 Mais projetos: [@JADRT22](https://github.com/JADRT22) — Hyprland automation • Roblox no Linux • MCP/agents
+
 **A minimalist macro recorder for Linux with hardware-level input capture.**
 
 [![Release](https://img.shields.io/github/v/release/JADRT22/LinuxTask?style=flat-square)](https://github.com/JADRT22/LinuxTask/releases)
