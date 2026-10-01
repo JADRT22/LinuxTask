@@ -55,7 +55,7 @@ The driver is selected automatically from `XDG_CURRENT_DESKTOP`,
 `XDG_SESSION_TYPE` and `HYPRLAND_INSTANCE_SIGNATURE`; unsupported desktops
 with a running X server fall back to the X11 driver.
 
-## ⚡ Copy-paste in 30s / Copie e rode em 30s
+## Copy-paste in 30s / Copie e rode em 30s
 
 ```bash
 git clone https://github.com/JADRT22/LinuxTask.git && cd LinuxTask && ./tools/install.sh && ./tools/run.sh
