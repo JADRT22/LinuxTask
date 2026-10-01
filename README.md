@@ -59,6 +59,14 @@ The driver is selected automatically from `XDG_CURRENT_DESKTOP`,
 `XDG_SESSION_TYPE` and `HYPRLAND_INSTANCE_SIGNATURE`; unsupported desktops
 with a running X server fall back to the X11 driver.
 
+## ⚡ Copie e rode em 30s / Copy-paste in 30s
+
+```bash
+git clone https://github.com/JADRT22/LinuxTask.git && cd LinuxTask && ./tools/install.sh && ./tools/run.sh
+```
+
+Grave com **F8**, reproduza com **F9** — funciona em qualquer janela. Record with **F8**, replay with **F9**.
+
 ## How it works
 
 ```mermaid
