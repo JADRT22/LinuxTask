@@ -1,8 +1,14 @@
-# LinuxTask
+# LinuxTask — Hyprland Macro Recorder for Linux
 
 > 👤 Mais projetos: [@JADRT22](https://github.com/JADRT22) — Hyprland automation • Roblox no Linux • MCP/agents
 
-**A minimalist macro recorder for Linux with hardware-level input capture.**
+**A minimalist hyprland macro recorder linux with hardware-level input capture — record and replay keyboard + mouse macros on Hyprland, GNOME Wayland, KDE Wayland and X11.**
+
+> 🎨 Usa Hyprland? Veja também **[WaybarDynamicTheme](https://github.com/JADRT22/WaybarDynamicTheme)** — tema dinâmico da Waybar a partir do wallpaper, mesma audiência Hyprland. | Using Hyprland? Also check **[WaybarDynamicTheme](https://github.com/JADRT22/WaybarDynamicTheme)** — wallpaper-based dynamic Waybar theming.
+
+### 🇧🇷 Em Português
+
+**LinuxTask** é um gravador de macros para Linux (hyprland macro recorder linux): grava e reproduz teclado e mouse no Hyprland, GNOME Wayland, KDE Wayland e X11, com captura via `evdev` e reprodução por `uinput`/APIs do compositor. Instalação: `./tools/install.sh`, uso: `./tools/run.sh` (atalhos globais F8 gravar / F9 reproduzir).
 
 [![Release](https://img.shields.io/github/v/release/JADRT22/LinuxTask?style=flat-square)](https://github.com/JADRT22/LinuxTask/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/JADRT22/LinuxTask/python-app.yml?style=flat-square&label=tests)](https://github.com/JADRT22/LinuxTask/actions/workflows/python-app.yml)
