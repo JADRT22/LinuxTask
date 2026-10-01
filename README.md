@@ -1,14 +1,10 @@
 # LinuxTask — Hyprland Macro Recorder for Linux
 
-> 👤 Mais projetos: [@JADRT22](https://github.com/JADRT22) — Hyprland automation • Roblox no Linux • MCP/agents
+> 👤 More projects: [@JADRT22](https://github.com/JADRT22) — Hyprland automation • Roblox on Linux • MCP/agents
 
 **A minimalist hyprland macro recorder linux with hardware-level input capture — record and replay keyboard + mouse macros on Hyprland, GNOME Wayland, KDE Wayland and X11.**
 
-> 🎨 Usa Hyprland? Veja também **[WaybarDynamicTheme](https://github.com/JADRT22/WaybarDynamicTheme)** — tema dinâmico da Waybar a partir do wallpaper, mesma audiência Hyprland. | Using Hyprland? Also check **[WaybarDynamicTheme](https://github.com/JADRT22/WaybarDynamicTheme)** — wallpaper-based dynamic Waybar theming.
-
-### 🇧🇷 Em Português
-
-**LinuxTask** é um gravador de macros para Linux (hyprland macro recorder linux): grava e reproduz teclado e mouse no Hyprland, GNOME Wayland, KDE Wayland e X11, com captura via `evdev` e reprodução por `uinput`/APIs do compositor. Instalação: `./tools/install.sh`, uso: `./tools/run.sh` (atalhos globais F8 gravar / F9 reproduzir).
+> 🎨 Using Hyprland? Also check **[WaybarDynamicTheme](https://github.com/JADRT22/WaybarDynamicTheme)** — wallpaper-based dynamic Waybar theming, same Hyprland audience.
 
 [![Release](https://img.shields.io/github/v/release/JADRT22/LinuxTask?style=flat-square)](https://github.com/JADRT22/LinuxTask/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/JADRT22/LinuxTask/python-app.yml?style=flat-square&label=tests)](https://github.com/JADRT22/LinuxTask/actions/workflows/python-app.yml)
@@ -59,13 +55,15 @@ The driver is selected automatically from `XDG_CURRENT_DESKTOP`,
 `XDG_SESSION_TYPE` and `HYPRLAND_INSTANCE_SIGNATURE`; unsupported desktops
 with a running X server fall back to the X11 driver.
 
-## ⚡ Copie e rode em 30s / Copy-paste in 30s
+## ⚡ Copy-paste in 30s / Copie e rode em 30s
 
 ```bash
 git clone https://github.com/JADRT22/LinuxTask.git && cd LinuxTask && ./tools/install.sh && ./tools/run.sh
 ```
 
-Grave com **F8**, reproduza com **F9** — funciona em qualquer janela. Record with **F8**, replay with **F9**.
+Record with **F8**, replay with **F9** — global hotkeys work in any window. Grave com **F8**, reproduza com **F9**.
+
+> 🇧🇷 **Em Português:** LinuxTask é um gravador de macros para Linux — grava e reproduz teclado e mouse no Hyprland, GNOME Wayland, KDE Wayland e X11, com captura via `evdev` e reprodução por `uinput`/APIs do compositor. Instalação: `./tools/install.sh`, uso: `./tools/run.sh` (atalhos globais F8/F9).
 
 ## How it works
 
