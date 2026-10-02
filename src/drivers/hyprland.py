@@ -50,7 +50,7 @@ class HyprlandDriver(DesktopManager):
         logger.warning("Using fallback resolution: 1920x1080")
 
     def get_cursor_pos(self):
-        """Returns current (x, y) coordinates via hyprctl.
+        """Returns current (x, y) coordinates via hyprctl, or None on failure.
 
         Unlike xdotool-on-XWayland, hyprctl reports synthetic moves
         back truthfully, so this is safe to call between moves.
@@ -65,7 +65,7 @@ class HyprlandDriver(DesktopManager):
         except (subprocess.CalledProcessError, FileNotFoundError,
                 ValueError) as exc:
             logger.error("get_cursor_pos failed: %s", exc)
-            return 0, 0
+            return None
 
     def move_cursor(self, x, y):
         """Moves cursor to absolute coordinates.
@@ -102,6 +102,9 @@ class HyprlandDriver(DesktopManager):
         """
         try:
             pos = self.get_cursor_pos()
+            if pos is None:
+                logger.error("move_relative aborted: cursor pos unknown")
+                return False
             self.move_cursor(pos[0] + dx, pos[1] + dy)
             return True
         except Exception as exc:
@@ -130,6 +133,9 @@ class HyprlandDriver(DesktopManager):
             logger.info("Resolution: %dx%d", self.screen_width, self.screen_height)
 
             pos = self.get_cursor_pos()
+            if pos is None:
+                logger.info("Current Position: unknown (read failed)")
+                return False
             logger.info("Current Position: %s", pos)
 
             new_x, new_y = pos[0] + 10, pos[1] + 10

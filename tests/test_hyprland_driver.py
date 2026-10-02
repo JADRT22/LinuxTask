@@ -47,9 +47,24 @@ class TestHyprlandDriver(unittest.TestCase):
         # Default resolution fallback
         self.assertEqual(driver.screen_width, 1920)
 
-        x, y = driver.get_cursor_pos()
-        self.assertEqual(x, 100)
-        self.assertEqual(y, 200)
+        pos = driver.get_cursor_pos()
+        self.assertEqual(pos, (100, 200))
+
+    @patch('subprocess.check_output')
+    def test_get_cursor_pos_missing_hyprctl_returns_none(self, mock_output):
+        mock_output.side_effect = FileNotFoundError("hyprctl not found")
+
+        driver = HyprlandDriver()
+        self.assertIsNone(driver.get_cursor_pos())
+
+    @patch('subprocess.check_output')
+    def test_get_cursor_pos_invalid_output_returns_none(self, mock_output):
+        # __init__ gets the same invalid payload (fallback resolution is fine),
+        # get_cursor_pos then fails to unpack the coordinates.
+        mock_output.return_value = b'invalid output'
+
+        driver = HyprlandDriver()
+        self.assertIsNone(driver.get_cursor_pos())
 
     @patch('subprocess.run')
     @patch('subprocess.check_output')
@@ -104,6 +119,18 @@ class TestHyprlandDriver(unittest.TestCase):
              "hl.dsp.cursor.move({ x = 110, y = 195 })"],
             capture_output=True, text=True, check=False
         )
+
+    @patch('subprocess.run')
+    @patch('subprocess.check_output')
+    def test_move_relative_cursor_pos_failure_returns_false(
+            self, mock_output, mock_run):
+        mock_output.side_effect = FileNotFoundError("hyprctl not found")
+
+        driver = HyprlandDriver()
+        result = driver.move_relative(10, -5)
+
+        self.assertFalse(result)
+        mock_run.assert_not_called()
 
     @patch('subprocess.check_call')
     @patch('subprocess.run')
