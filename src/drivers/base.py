@@ -8,6 +8,9 @@ License: MIT
 
 from abc import ABC, abstractmethod
 
+# Fallback screen resolution used by drivers when detection fails.
+FALLBACK_RESOLUTION = (1920, 1080)
+
 
 class DesktopManager(ABC):
     """
@@ -36,6 +39,13 @@ class DesktopManager(ABC):
         Must return True if handled by compositor, or False to fallback to UInput.
         """
         pass
+
+    def _clamp(self, x, y):
+        """Clamps (x, y) to the detected screen bounds."""
+        return (
+            max(0, min(int(x), self.screen_width - 1)),
+            max(0, min(int(y), self.screen_height - 1))
+        )
 
     def mouse_button(self, button, pressed):
         """Handles mouse button press/release.

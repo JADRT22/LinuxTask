@@ -34,7 +34,6 @@ import sys
 import time
 
 import numpy as np
-from PIL import Image  # noqa: F401  (mantido p/ consistência dos PoCs)
 
 # Roda de qualquer CWD: resolve src/ (drivers, capture) e o PoC irmão
 # image_click/ (UInputClicker) pelo local deste arquivo.

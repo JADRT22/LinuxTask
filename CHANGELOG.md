@@ -45,7 +45,7 @@ last release; `release.py` inserts new version headings below it.)
 - ui: compact TinyTask-style toolbar, Unreleased-aware release script
 
 
-## [3.0.0] - 2026-09-15
+## [v3.0.0] - 2026-09-15
 
 ### Added
 - **KDE Wayland Support**: new driver using the Portal RemoteDesktop interface
@@ -106,7 +106,7 @@ last release; `release.py` inserts new version headings below it.)
   NTP/DST clock jumps. Saved `.json` macros stay compatible (they store
   deltas, not absolute timestamps).
 
-## [2.6.0] - Cinnamon Edition - 2026-04-07
+## [v2.6.0] - Cinnamon Edition - 2026-04-07
 
 ### Added
 - **Full Cinnamon/X11 Support**: New driver using `xdotool` for absolute and relative movement on X11 desktops (Cinnamon, MATE, XFCE, etc.).
@@ -129,7 +129,7 @@ last release; `release.py` inserts new version headings below it.)
 - **Theme Consistency**: Fixed settings window hardcoded background color to respect user theme.
 - **Release Script Regex**: support dynamic window titles when reading the version.
 
-## [2.4.0] - 2026-03-01
+## [v2.4.0] - 2026-03-01
 ### Added
 - EPIC: Implement Release Automation Script in `tools/release.py`.
 - EPIC: Professionalize Documentation (README overhaul and CONTRIBUTING.md).
@@ -144,7 +144,7 @@ last release; `release.py` inserts new version headings below it.)
 - Investigate absolute cursor position on GNOME and add research PoC script.
 - Dynamic screen resolution detection on GNOME/Wayland via `gdbus` and `xrandr`.
 
-## [2.2.0] - 2026-03-01
+## [v2.2.0] - 2026-03-01
 ### Added
 - **Hardware Access Automation**: Introduced `fix_linuxtask_perms.sh` to automate ACL and Udev configuration.
 - **Pure Relative Movement Engine**: Implemented relative movement logic for GNOME Wayland users.
@@ -153,7 +153,7 @@ last release; `release.py` inserts new version headings below it.)
 ### Fixed
 - Resolved "drift" and "corner jump" bugs with strict coordinate clamping and delta-based tracking.
 
-## [2.0.0] - 2026-02-22
+## [v2.0.0] - 2026-02-22
 ### Added
 - **🤖 Humanize Mode (Anti-Bot)**: Algorithm with ±2px jitter and 0-3% time delays to mimic human behavior.
 - **Settings UI Overhaul**: Fixed "Black Screen" bug on Wayland/Hyprland and improved contrast.

@@ -2,11 +2,15 @@ import logging
 import time
 import os
 import threading
+from evdev.ecodes import BTN_LEFT, BTN_MIDDLE, BTN_RIGHT
 from Xlib.display import Display
 from Xlib import X
 from .base import DesktopManager
 
 logger = logging.getLogger(__name__)
+
+# evdev button code -> X11 button number.
+BTN_MAP = {BTN_LEFT: 1, BTN_RIGHT: 3, BTN_MIDDLE: 2}
 
 
 class X11Driver(DesktopManager):
@@ -35,13 +39,7 @@ class X11Driver(DesktopManager):
                 return int(data["root_x"]), int(data["root_y"])
             except Exception as exc:
                 logger.error("get_cursor_pos failed: %s", exc)
-                return 0, 0
-
-    def _clamp(self, x, y):
-        return (
-            max(0, min(int(x), self.screen_width - 1)),
-            max(0, min(int(y), self.screen_height - 1))
-        )
+                return None
 
     def move_cursor(self, x, y):
         with self._lock:
@@ -57,7 +55,11 @@ class X11Driver(DesktopManager):
     def move_relative(self, dx, dy):
         with self._lock:
             try:
-                real_x, real_y = self.get_cursor_pos()
+                pos = self.get_cursor_pos()
+                if pos is None:
+                    logger.error("move_relative aborted: cursor pos unknown")
+                    return False
+                real_x, real_y = pos
                 cx, cy = self._clamp(real_x + int(dx), real_y + int(dy))
                 self.display.xtest_fake_input(
                     X.MotionNotify, root=self._root.id, x=cx, y=cy
@@ -69,13 +71,7 @@ class X11Driver(DesktopManager):
                 return False
 
     def mouse_button(self, button, pressed):
-        x11_btn = None
-        if button == 272:
-            x11_btn = 1
-        elif button == 273:
-            x11_btn = 3
-        elif button == 274:
-            x11_btn = 2
+        x11_btn = BTN_MAP.get(button)
         if not x11_btn:
             return False
         with self._lock:
@@ -103,20 +99,23 @@ class X11Driver(DesktopManager):
                 return False
 
     def self_test(self):
-        print("--- X11Driver Self-Test ---")
+        logger.info("--- X11Driver Self-Test ---")
         try:
-            print(f"Resolution: {self.screen_width}x{self.screen_height}")
+            logger.info("Resolution: %dx%d", self.screen_width, self.screen_height)
             pos = self.get_cursor_pos()
-            print(f"Current Position: {pos}")
+            if pos is None:
+                logger.info("Current Position: unknown (read failed)")
+                return False
+            logger.info("Current Position: %s", pos)
             new_x, new_y = pos[0] + 10, pos[1] + 10
             self.move_cursor(new_x, new_y)
-            print(f"Cursor moved toward: ({new_x}, {new_y})")
+            logger.info("Cursor moved toward: (%d, %d)", new_x, new_y)
             time.sleep(0.1)
             new_pos = self.get_cursor_pos()
-            print(f"New Position: {new_pos}")
+            logger.info("New Position: %s", new_pos)
             return True
         except Exception as exc:
-            print(f"Self-Test failed: {exc}")
+            logger.info("Self-Test failed: %s", exc)
             return False
 
 

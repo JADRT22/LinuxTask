@@ -36,10 +36,19 @@ import threading
 import json
 import os
 import queue
+import tkinter
+import traceback
+from collections import deque
 from tkinter import filedialog
 from drivers.factory import AutoDetectDriver
 
 APP_VERSION = "3.0.1"
+
+# Cap for the device_loop dedupe set: bounds memory in long sessions.
+# When exceeded, only the oldest entries are evicted (see device_loop)
+# instead of clearing the whole set, which would reopen double-fire.
+MAX_DEDUPE_IDS = 100000
+MAX_DEDUPE_EVICT = 10000
 
 
 class ToolTip:
@@ -63,16 +72,17 @@ class ToolTip:
         try:
             x = self.widget.winfo_rootx() + 10
             y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
-            self.tip = tip = __import__("tkinter").Toplevel(self.widget)
+            self.tip = tip = tkinter.Toplevel(self.widget)
             tip.wm_overrideredirect(True)
             tip.wm_geometry(f"+{x}+{y}")
-            label = __import__("tkinter").Label(
+            label = tkinter.Label(
                 tip, text=self.text, background="#222222",
                 foreground="white", relief="solid", borderwidth=1,
                 font=("Arial", 9), padx=6, pady=2,
             )
             label.pack()
         except Exception:
+            logger.debug("Failed to show tooltip.", exc_info=True)
             self.tip = None
 
     def _hide(self, _event=None):
@@ -80,7 +90,7 @@ class ToolTip:
             if self.tip is not None:
                 self.tip.destroy()
         except Exception:
-            pass
+            logger.debug("Failed to hide tooltip.", exc_info=True)
         finally:
             self.tip = None
 
@@ -98,7 +108,7 @@ class LinuxTaskApp(ctk.CTk):
                 import tkinter.messagebox as mb
                 mb.showerror("LinuxTask - Initialization failed", str(exc))
             except Exception:
-                pass
+                logger.debug("Failed to show error dialog.", exc_info=True)
             sys.exit(1)
         env_name = self.manager.__class__.__name__.replace("Driver", "")
         if env_name == "X11": env_name = "X11 Edition"
@@ -134,6 +144,8 @@ class LinuxTaskApp(ctk.CTk):
         self._rel_dirty = False
         self._processed_ids = set()
         self._processed_ids_lock = threading.Lock()
+        # Insertion order of _processed_ids, for oldest-first eviction.
+        self._processed_ids_order = deque()
         self._input_devices = []
         # Thread-safe queue: evdev listener threads push "rec" / "play" /
         # "play_finished" actions here; the UI thread consumes them via
@@ -219,7 +231,7 @@ class LinuxTaskApp(ctk.CTk):
             try:
                 self.after(50, self._poll_hotkeys)
             except Exception:
-                pass
+                logger.debug("Hotkey poll reschedule failed.", exc_info=True)
 
     def init_uinput(self):
         """Initializes a virtual UInput device for key replay."""
@@ -330,18 +342,29 @@ class LinuxTaskApp(ctk.CTk):
         """Main event reading loop for a single input device."""
         try:
             for event in dev.read_loop():
-                event_sec = event.sec
-                event_usec = event.usec
-
                 # Deduplicate events across multiple devices
-                eid = (event_sec, event_usec, event.type, event.code, event.value)
+                eid = self._event_id(event)
                 with self._processed_ids_lock:
                     if eid in self._processed_ids:
                         continue
                     self._processed_ids.add(eid)
-                    # Cap set size to prevent memory leak during long sessions
-                    if len(self._processed_ids) > 100000:
-                        self._processed_ids.clear()
+                    # NOTE: __dict__ lookup (not getattr): this class is a
+                    # tkinter widget whose __getattr__ recurses on missing
+                    # attrs for instances built via __new__ in tests.
+                    order = self.__dict__.get("_processed_ids_order")
+                    if order is not None:
+                        order.append(eid)
+                    # Cap set size to prevent memory leak during long sessions.
+                    # Evict only the oldest IDs so recent events stay
+                    # deduplicated (a full clear would reopen double-fire).
+                    if len(self._processed_ids) > MAX_DEDUPE_IDS:
+                        if order is not None:
+                            for _ in range(min(len(order), MAX_DEDUPE_EVICT)):
+                                self._processed_ids.discard(order.popleft())
+                                if len(self._processed_ids) <= MAX_DEDUPE_IDS - MAX_DEDUPE_EVICT:
+                                    break
+                        else:
+                            self._processed_ids.clear()
 
                 # --- Mouse movement: record absolute or relative ---
                 if event.type == e.EV_REL and self.recording:
@@ -358,29 +381,42 @@ class LinuxTaskApp(ctk.CTk):
                             })
                         continue
                     if event.code == e.REL_X:
-                        self._rel_dx += event.value
-                    elif event.code == e.REL_Y:
-                        self._rel_dy += event.value
-                    self._rel_dirty = True
-
-                if event.type == e.EV_SYN and self.recording and self._rel_dirty:
-                    self._rel_dirty = False
-                    now = time.monotonic() - self.start_time
-                    if self.manager.supports_absolute_positioning:
-                        pos = self.manager.get_cursor_pos()
                         with self.events_lock:
-                            self.events.append({
-                                "type": "pos", "x": pos[0],
-                                "y": pos[1], "time": now
-                            })
+                            self._rel_dx += event.value
+                            self._rel_dirty = True
+                    elif event.code == e.REL_Y:
+                        with self.events_lock:
+                            self._rel_dy += event.value
+                            self._rel_dirty = True
                     else:
                         with self.events_lock:
-                            self.events.append({
-                                "type": "rel", "dx": self._rel_dx,
-                                "dy": self._rel_dy, "time": now
-                            })
-                    self._rel_dx = 0
-                    self._rel_dy = 0
+                            self._rel_dirty = True
+
+                if event.type == e.EV_SYN and self.recording:
+                    with self.events_lock:
+                        rel_dx, rel_dy = self._rel_dx, self._rel_dy
+                        rel_dirty = self._rel_dirty
+                        self._rel_dirty = False
+                        self._rel_dx = 0
+                        self._rel_dy = 0
+                    if rel_dirty:
+                        now = time.monotonic() - self.start_time
+                        if self.manager.supports_absolute_positioning:
+                            pos = self.manager.get_cursor_pos()
+                            if pos is None:
+                                logger.debug("EV_SYN flush skipped: cursor pos unknown")
+                            else:
+                                with self.events_lock:
+                                    self.events.append({
+                                        "type": "pos", "x": pos[0],
+                                        "y": pos[1], "time": now
+                                    })
+                        else:
+                            with self.events_lock:
+                                self.events.append({
+                                    "type": "rel", "dx": rel_dx,
+                                    "dy": rel_dy, "time": now
+                                })
 
                 # --- Key / button events ---
                 if event.type == e.EV_KEY:
@@ -442,11 +478,16 @@ class LinuxTaskApp(ctk.CTk):
             return
         if not self.recording:
             self.recording = True
-            self._rel_dirty = False
-            self._rel_dx = 0
-            self._rel_dy = 0
+            with self.events_lock:
+                self._rel_dirty = False
+                self._rel_dx = 0
+                self._rel_dy = 0
             with self._processed_ids_lock:
                 self._processed_ids.clear()
+                # __dict__ lookup: see note in device_loop.
+                order = self.__dict__.get("_processed_ids_order")
+                if order is not None:
+                    order.clear()
             with self.events_lock:
                 self.events = []
             self.start_cursor_pos = self.manager.get_cursor_pos()
@@ -536,75 +577,89 @@ class LinuxTaskApp(ctk.CTk):
                     target_time = start_p + (ev['time'] / speed)
                     remaining = target_time - time.monotonic()
                     if remaining > 0:
-                        threading.Event().wait(remaining)
+                        # Sliced wait: Stop/F9 takes effect promptly
+                        # instead of only after the full gap elapses.
+                        deadline = time.monotonic() + remaining
+                        while self.playing:
+                            left = deadline - time.monotonic()
+                            if left <= 0:
+                                break
+                            time.sleep(min(left, 0.05))
 
                     if not self.playing:
                         break
 
-                    if ev['type'] == "pos":
-                        self.manager.move_cursor(ev['x'], ev['y'])
+                    # One bad event must not abort the whole macro.
+                    try:
+                        if ev['type'] == "pos":
+                            self.manager.move_cursor(ev['x'], ev['y'])
 
-                    elif ev['type'] == "rel":
-                        dx, dy = ev['dx'], ev['dy']
-                        delay = 0
-                        if self.humanize_enabled.get() and i + 1 < len(events_copy):
-                            delay = (events_copy[i + 1]['time'] - ev['time']) / speed
-                            dx, dy, delay = self._apply_humanize(dx, dy, delay)
+                        elif ev['type'] == "rel":
+                            dx, dy = ev['dx'], ev['dy']
+                            delay = 0
+                            if self.humanize_enabled.get() and i + 1 < len(events_copy):
+                                delay = (events_copy[i + 1]['time'] - ev['time']) / speed
+                                dx, dy, delay = self._apply_humanize(dx, dy, delay)
 
-                        handled = self.manager.move_relative(dx, dy)
-                        if not handled and self.uinput_device is not None:
-                            self.uinput_device.write(e.EV_REL, e.REL_X, dx)
-                            self.uinput_device.write(e.EV_REL, e.REL_Y, dy)
-                            self.uinput_device.syn()
-                        elif not handled:
-                            logger.warning(
-                                "Relative move (%d, %d) dropped: driver "
-                                "declined and UInput unavailable.", dx, dy
+                            handled = self.manager.move_relative(dx, dy)
+                            if not handled and self.uinput_device is not None:
+                                self.uinput_device.write(e.EV_REL, e.REL_X, dx)
+                                self.uinput_device.write(e.EV_REL, e.REL_Y, dy)
+                                self.uinput_device.syn()
+                            elif not handled:
+                                logger.warning(
+                                    "Relative move (%d, %d) dropped: driver "
+                                    "declined and UInput unavailable.", dx, dy
+                                )
+
+                        elif ev['type'] == "scroll":
+                            handled = self.manager.scroll(
+                                ev['direction'], ev.get('clicks', 1)
                             )
-
-                    elif ev['type'] == "scroll":
-                        handled = self.manager.scroll(
-                            ev['direction'], ev.get('clicks', 1)
-                        )
-                        if not handled:
-                            if self.uinput_device is not None:
-                                wheel = 1 if ev['direction'] == 'up' else -1
-                                for _ in range(ev.get('clicks', 1)):
-                                    self.uinput_device.write(
-                                        e.EV_REL, e.REL_WHEEL, wheel
+                            if not handled:
+                                if self.uinput_device is not None:
+                                    wheel = 1 if ev['direction'] == 'up' else -1
+                                    for _ in range(ev.get('clicks', 1)):
+                                        self.uinput_device.write(
+                                            e.EV_REL, e.REL_WHEEL, wheel
+                                        )
+                                    self.uinput_device.syn()
+                                else:
+                                    logger.warning(
+                                        "Scroll (%s x%d) dropped: driver "
+                                        "declined and UInput unavailable.",
+                                        ev['direction'], ev.get('clicks', 1)
                                     )
+
+                        elif ev['type'] == "key":
+                            if ev['code'] in [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE]:
+                                handled = self.manager.mouse_button(ev['code'], ev['val'] == 1)
+                                if handled:
+                                    continue
+
+                            if self.uinput_device is not None:
+                                self.uinput_device.write(
+                                    e.EV_KEY, ev['code'], ev['val']
+                                )
                                 self.uinput_device.syn()
                             else:
-                                logger.warning(
-                                    "Scroll (%s x%d) dropped: driver "
-                                    "declined and UInput unavailable.",
-                                    ev['direction'], ev.get('clicks', 1)
-                                )
-
-                    elif ev['type'] == "key":
-                        if ev['code'] in [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE]:
-                            handled = self.manager.mouse_button(ev['code'], ev['val'] == 1)
-                            if handled:
-                                continue
-
-                        if self.uinput_device is not None:
-                            self.uinput_device.write(
-                                e.EV_KEY, ev['code'], ev['val']
-                            )
-                            self.uinput_device.syn()
-                        else:
-                            if ev['val'] == 1:
-                                logger.warning(
-                                    "UInput unavailable and driver could not handle "
-                                    "mouse button (code=%d)", ev['code']
-                                )
+                                if ev['val'] == 1:
+                                    logger.warning(
+                                        "UInput unavailable and driver could not handle "
+                                        "mouse button (code=%d)", ev['code']
+                                    )
+                    except Exception as exc:
+                        logger.warning(
+                            "Playback event %d (%s) failed, skipping: %s",
+                            i, ev.get('type'), exc
+                        )
+                        continue
 
                 if not self.loop_enabled:
                     break
 
         except Exception as exc:
             logger.error("Playback error: %s", exc)
-            import traceback
             logger.error(traceback.format_exc())
         finally:
             self.playing = False
@@ -632,7 +687,7 @@ class LinuxTaskApp(ctk.CTk):
                     "start_pos": self.start_cursor_pos,
                     "events": events_copy
                 }
-                with open(f, 'w') as fp:
+                with open(f, 'w', encoding="utf-8") as fp:
                     json.dump(macro_data, fp, indent=2)
                 logger.info("Macro saved to %s (%d events).", os.path.basename(f), len(events_copy))
             except OSError as exc:
@@ -659,12 +714,14 @@ class LinuxTaskApp(ctk.CTk):
         )
         if f:
             try:
-                with open(f, 'r') as fp:
+                with open(f, 'r', encoding="utf-8") as fp:
                     data = json.load(fp)
                 if isinstance(data, dict):
                     raw_events = data.get("events", [])
                     pos = data.get("start_pos")
-                    if pos and len(pos) == 2:
+                    if (isinstance(pos, (list, tuple)) and len(pos) == 2
+                            and all(isinstance(v, (int, float))
+                                    and not isinstance(v, bool) for v in pos)):
                         self.start_cursor_pos = tuple(pos)
                 else:
                     raw_events = data

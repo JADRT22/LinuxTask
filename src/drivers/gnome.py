@@ -10,11 +10,20 @@ import subprocess
 import shutil
 import atexit
 import os
+import re
 import time
 import logging
-from .base import DesktopManager
+from evdev.ecodes import BTN_LEFT, BTN_MIDDLE, BTN_RIGHT
+from .base import DesktopManager, FALLBACK_RESOLUTION
 
 logger = logging.getLogger(__name__)
+
+# evdev button code -> ydotool button name.
+# ydotool: 0x40=LEFT, 0x41=RIGHT, 0x42=MIDDLE.
+BTN_MAP = {BTN_LEFT: "0x40", BTN_RIGHT: "0x41", BTN_MIDDLE: "0x42"}
+
+# How long to wait for a freshly spawned ydotoold socket (x 0.1s).
+YDOTOOL_SOCKET_RETRIES = 30
 
 
 class GnomeDriver(DesktopManager):
@@ -38,15 +47,14 @@ class GnomeDriver(DesktopManager):
                 self._tk_instance.destroy()
                 self._tk_instance = None
         except Exception:
-            pass
+            logger.debug("Failed to destroy tkinter instance.", exc_info=True)
 
     def _detect_resolution(self):
         """Dynamic resolution detection for GNOME/Wayland."""
         # Try xrandr first (covers XWayland scenarios)
-        import re
         try:
             out = subprocess.check_output(
-                ['xrandr'], stderr=subprocess.STDOUT
+                ['xrandr'], stderr=subprocess.STDOUT, timeout=5
             ).decode()
             for line in out.splitlines():
                 if '*' in line:
@@ -55,7 +63,8 @@ class GnomeDriver(DesktopManager):
                         self.screen_width = int(match.group(1))
                         self.screen_height = int(match.group(2))
                         return
-        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        except (subprocess.CalledProcessError, FileNotFoundError,
+                subprocess.TimeoutExpired) as exc:
             logger.debug("xrandr failed: %s", exc)
 
         # Fallback: Query org.gnome.Mutter.DisplayConfig via gdbus
@@ -66,7 +75,7 @@ class GnomeDriver(DesktopManager):
                 '--object-path', '/org/gnome/Mutter/DisplayConfig',
                 '--method', 'org.gnome.Mutter.DisplayConfig.GetCurrentState'
             ]
-            out = subprocess.check_output(cmd).decode()
+            out = subprocess.check_output(cmd, timeout=5).decode()
             if "'is-current': <true>" in out:
                 pattern = (
                     r"'\d+x\d+@[\d\.]+',\s+(\d+),\s+(\d+).*?"
@@ -77,10 +86,11 @@ class GnomeDriver(DesktopManager):
                     self.screen_width = int(match.group(1))
                     self.screen_height = int(match.group(2))
                     return
-        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        except (subprocess.CalledProcessError, FileNotFoundError,
+                subprocess.TimeoutExpired) as exc:
             logger.debug("gdbus resolution detection failed: %s", exc)
 
-        self.screen_width, self.screen_height = 1920, 1080
+        self.screen_width, self.screen_height = FALLBACK_RESOLUTION
         logger.warning("Using fallback resolution: 1920x1080")
 
     def ensure_daemon(self):
@@ -90,6 +100,9 @@ class GnomeDriver(DesktopManager):
         """
         if not self.ydotoold_path:
             logger.warning("ydotoold not found. Mouse movement will not work.")
+            return
+        if not self.ydotool_path:
+            logger.warning("ydotool not found. Mouse movement will not work.")
             return
 
         # Check if socket already exists and is functional
@@ -119,7 +132,7 @@ class GnomeDriver(DesktopManager):
                 [self.ydotoold_path, '--socket-path', self.socket],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
-            for _ in range(30):
+            for _ in range(YDOTOOL_SOCKET_RETRIES):
                 if os.path.exists(self.socket):
                     # 0o600: only the owner can inject input through this socket.
                     os.chmod(self.socket, 0o600)
@@ -156,8 +169,8 @@ class GnomeDriver(DesktopManager):
             return x, y
         except Exception as exc:
             logger.debug("get_cursor_pos (tkinter) failed: %s", exc)
-        
-        return 0, 0
+
+        return None
 
     def move_cursor(self, x, y):
         """Emulates absolute positioning via a relative delta.
@@ -167,7 +180,11 @@ class GnomeDriver(DesktopManager):
         by move_relative().
         """
         try:
-            cur_x, cur_y = self.get_cursor_pos()
+            pos = self.get_cursor_pos()
+            if pos is None:
+                logger.error("move_cursor aborted: cursor pos unknown")
+                return
+            cur_x, cur_y = pos
             self.move_relative(int(x) - int(cur_x), int(y) - int(cur_y))
         except Exception as exc:
             logger.error("move_cursor(%s, %s) failed: %s", x, y, exc)
@@ -195,12 +212,7 @@ class GnomeDriver(DesktopManager):
 
     def mouse_button(self, button, pressed):
         """Handles mouse button via ydotool mousedown/mouseup."""
-        # evdev: 272=LEFT, 273=RIGHT, 274=MIDDLE
-        # ydotool: 0x40=LEFT, 0x41=RIGHT, 0x42=MIDDLE
-        ydo_btn = None
-        if button == 272: ydo_btn = "0x40"
-        elif button == 273: ydo_btn = "0x41"
-        elif button == 274: ydo_btn = "0x42"
+        ydo_btn = BTN_MAP.get(button)
 
         if not ydo_btn or not self.ydotool_path:
             return False

@@ -10,7 +10,7 @@ import subprocess
 import json
 import time
 import logging
-from .base import DesktopManager
+from .base import DesktopManager, FALLBACK_RESOLUTION
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class HyprlandDriver(DesktopManager):
                 json.JSONDecodeError) as exc:
             logger.warning("hyprctl monitors failed: %s", exc)
 
-        self.screen_width, self.screen_height = 1920, 1080
+        self.screen_width, self.screen_height = FALLBACK_RESOLUTION
         logger.warning("Using fallback resolution: 1920x1080")
 
     def get_cursor_pos(self):
@@ -66,12 +66,6 @@ class HyprlandDriver(DesktopManager):
                 ValueError) as exc:
             logger.error("get_cursor_pos failed: %s", exc)
             return 0, 0
-
-    def _clamp(self, x, y):
-        return (
-            max(0, min(int(x), self.screen_width - 1)),
-            max(0, min(int(y), self.screen_height - 1))
-        )
 
     def move_cursor(self, x, y):
         """Moves cursor to absolute coordinates.
@@ -97,7 +91,7 @@ class HyprlandDriver(DesktopManager):
                 ["hyprctl", "dispatch", "movecursor", f"{cx} {cy}"],
                 capture_output=True, check=True,
             )
-        except subprocess.CalledProcessError as exc:
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError) as exc:
             logger.error("move_cursor(%d, %d) failed: %s", cx, cy, exc)
 
     def move_relative(self, dx, dy):
@@ -127,31 +121,31 @@ class HyprlandDriver(DesktopManager):
 
     def self_test(self):
         """Performs driver verification."""
-        print("--- HyprlandDriver Self-Test ---")
+        logger.info("--- HyprlandDriver Self-Test ---")
         try:
             subprocess.check_call(
                 "command -v hyprctl >/dev/null 2>&1", shell=True
             )
-            print("hyprctl found.")
-            print(f"Resolution: {self.screen_width}x{self.screen_height}")
+            logger.info("hyprctl found.")
+            logger.info("Resolution: %dx%d", self.screen_width, self.screen_height)
 
             pos = self.get_cursor_pos()
-            print(f"Current Position: {pos}")
+            logger.info("Current Position: %s", pos)
 
             new_x, new_y = pos[0] + 10, pos[1] + 10
             self.move_cursor(new_x, new_y)
-            print(f"Cursor moved toward: ({new_x}, {new_y})")
+            logger.info("Cursor moved toward: (%d, %d)", new_x, new_y)
 
             time.sleep(0.1)
             new_pos = self.get_cursor_pos()
-            print(f"New Position: {new_pos}")
+            logger.info("New Position: %s", new_pos)
 
             return True
         except subprocess.CalledProcessError:
-            print("Error: hyprctl command not found.")
+            logger.info("Error: hyprctl command not found.")
             return False
         except Exception as exc:
-            print(f"Self-Test failed: {exc}")
+            logger.info("Self-Test failed: %s", exc)
             return False
 
 

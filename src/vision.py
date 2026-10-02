@@ -18,17 +18,16 @@ Algorithm proven experimentally (experimental/image_click/): score
 """
 
 import base64
+import io
 import logging
 
 import numpy as np
 from PIL import Image
 
-logger = logging.getLogger(__name__)
-
 
 def encode_template_png(image):
     """Encodes an RGB ndarray as base64 PNG (for macro JSON storage)."""
-    buf = __import__("io").BytesIO()
+    buf = io.BytesIO()
     Image.fromarray(np.asarray(image, dtype=np.uint8)).save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
@@ -36,7 +35,7 @@ def encode_template_png(image):
 def decode_template_png(data):
     """Decodes a base64 PNG string back to an RGB ndarray."""
     raw = base64.b64decode(data)
-    return np.asarray(Image.open(__import__("io").BytesIO(raw))
+    return np.asarray(Image.open(io.BytesIO(raw))
                       .convert("RGB"))
 
 

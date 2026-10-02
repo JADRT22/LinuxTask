@@ -5,12 +5,15 @@ import dbus
 import dbus.mainloop.glib
 from gi.repository import GLib
 import threading
-import queue
 import re
+from evdev.ecodes import BTN_LEFT, BTN_MIDDLE, BTN_RIGHT
 
-from .base import DesktopManager
+from .base import DesktopManager, FALLBACK_RESOLUTION
 
 logger = logging.getLogger(__name__)
+
+# evdev button code -> Portal button number.
+BTN_MAP = {BTN_LEFT: 1, BTN_RIGHT: 3, BTN_MIDDLE: 2}
 
 
 class KdeWaylandDriver(DesktopManager):
@@ -23,11 +26,10 @@ class KdeWaylandDriver(DesktopManager):
         self._cur_y = 0
         self._pos_initialized = False
         self._portal_ready = False
-        self._response_queue = queue.Queue()
         self._dbus_loop = None
         self._bus = None
-        self._screen_width = 0
-        self._screen_height = 0
+        self.screen_width = 0
+        self.screen_height = 0
         self._detect_resolution()
         self._portal_init()
 
@@ -47,11 +49,11 @@ class KdeWaylandDriver(DesktopManager):
                 # grab the first mode on the line instead.
                 m = re.search(r'(\d+)x(\d+)@[0-9.]*\*', line)
                 if m:
-                    self._screen_width = int(m.group(1))
-                    self._screen_height = int(m.group(2))
+                    self.screen_width = int(m.group(1))
+                    self.screen_height = int(m.group(2))
                     logger.info(
                         "Resolution (kscreen): %dx%d",
-                        self._screen_width, self._screen_height)
+                        self.screen_width, self.screen_height)
                     return
         except Exception as exc:
             logger.debug("kscreen-doctor failed: %s", exc)
@@ -63,21 +65,21 @@ class KdeWaylandDriver(DesktopManager):
                 if '*' in line:
                     m = re.search(r'(\d+)x(\d+)', line)
                     if m:
-                        self._screen_width = int(m.group(1))
-                        self._screen_height = int(m.group(2))
+                        self.screen_width = int(m.group(1))
+                        self.screen_height = int(m.group(2))
                         logger.info("Resolution: %dx%d",
-                                    self._screen_width, self._screen_height)
+                                    self.screen_width, self.screen_height)
                         return
         except Exception:
-            pass
-        self._screen_width, self._screen_height = 1920, 1080
+            logger.debug("xrandr fallback failed.", exc_info=True)
+        self.screen_width, self.screen_height = FALLBACK_RESOLUTION
         logger.warning("Using fallback resolution: 1920x1080")
 
     def _predict_request_path(self, token):
         name = self._bus.get_unique_name().replace('.', '_').replace(':', '')
         return f"/org/freedesktop/portal/desktop/request/{name}/{token}"
 
-    def _portal_call(self, method, *args, timeout=120):
+    def _portal_call(self, method, *args, timeout=15):
         handle_token = f"ht_{int(time.time() * 1000000)}"
         request_path = self._predict_request_path(handle_token)
         event = threading.Event()
@@ -169,13 +171,16 @@ class KdeWaylandDriver(DesktopManager):
             )
             logger.info("SelectDevices response: %s", resp)
 
-            # Step 3: Start (shows authorization dialog)
+            # Step 3: Start (shows authorization dialog; the user may
+            # need a minute to approve, so keep a long timeout here —
+            # the automated steps above already use the short default).
             logger.info("Starting session (authorization required)...")
             resp = self._portal_call(
                 self._portal.Start,
                 dbus.ObjectPath(self._session_handle),
                 '',
-                {}
+                {},
+                timeout=120
             )
             logger.info("Start response: %s", resp)
             if isinstance(resp, (list, tuple)) and len(resp) > 0:
@@ -208,12 +213,6 @@ class KdeWaylandDriver(DesktopManager):
         # known position instead of poisoning callers with (0, 0).
         self._lazy_init_tracked_pos()
         return self._cur_x, self._cur_y
-
-    def _clamp(self, x, y):
-        return (
-            max(0, min(int(x), self._screen_width - 1)),
-            max(0, min(int(y), self._screen_height - 1))
-        )
 
     def move_cursor(self, x, y):
         if not self._portal_ready:
@@ -275,8 +274,7 @@ class KdeWaylandDriver(DesktopManager):
         if not self._portal_ready:
             return False
         try:
-            btn_map = {272: 1, 273: 3, 274: 2}
-            btn = btn_map.get(button)
+            btn = BTN_MAP.get(button)
             if btn is None:
                 return False
             state = 1 if pressed else 0
@@ -302,7 +300,8 @@ class KdeWaylandDriver(DesktopManager):
             parts = dict(p.split(':') for p in out.split() if ':' in p)
             self._cur_x, self._cur_y = int(parts['x']), int(parts['y'])
         except Exception:
-            logger.debug("no live position available; tracking from (0, 0)")
+            logger.debug("no live position available; tracking from (0, 0)",
+                         exc_info=True)
 
     def scroll(self, direction, clicks=1):
         """Performs scroll via portal. Returns True if handled."""
@@ -319,11 +318,11 @@ class KdeWaylandDriver(DesktopManager):
             return False
 
     def self_test(self):
-        print("--- KDE Wayland Driver Self-Test ---")
-        print(f"Resolution: {self._screen_width}x{self._screen_height}")
-        print(f"Portal ready: {self._portal_ready}")
+        logger.info("--- KDE Wayland Driver Self-Test ---")
+        logger.info("Resolution: %dx%d", self.screen_width, self.screen_height)
+        logger.info("Portal ready: %s", self._portal_ready)
         pos = self.get_cursor_pos()
-        print(f"Current Position: {pos}")
+        logger.info("Current Position: %s", pos)
         return True
 
 

@@ -15,6 +15,7 @@ the right backend from the same env vars the driver factory uses.
 """
 
 import logging
+import io
 import os
 import subprocess
 import time
@@ -65,7 +66,7 @@ class GrimCapture:
                 "grim falhou: %s"
                 % exc.stderr.decode(errors="replace").strip()
             )
-        return np.asarray(Image.open(__import__("io").BytesIO(png))
+        return np.asarray(Image.open(io.BytesIO(png))
                           .convert("RGB"))
 
     def select_region(self):
@@ -127,7 +128,7 @@ class GrimCapture:
                 "grim falhou: %s"
                 % exc.stderr.decode(errors="replace").strip()
             )
-        return np.asarray(Image.open(__import__("io").BytesIO(png))
+        return np.asarray(Image.open(io.BytesIO(png))
                           .convert("RGB"))
 
 
@@ -181,7 +182,7 @@ def capture_backend():
     desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
     if "HYPRLAND" in desktop:
         return GrimCapture()
-    # TODO(vision): X11 via python-xlib GetImage; GNOME/KDE via Portal
+    # NOTE: X11 via python-xlib GetImage; GNOME/KDE via Portal
     # Screenshot. Keep the NotImplementedError message in sync with the
     # CHANGELOG "Known limitations" note.
     env = desktop or "desconhecido"

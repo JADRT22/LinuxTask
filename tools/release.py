@@ -25,15 +25,15 @@ CHANGELOG_PATH = os.path.join(PROJECT_ROOT, 'CHANGELOG.md')
 # no longer works).
 APP_VERSION_RE = re.compile(r'^APP_VERSION\s*=\s*["\']([\d\.]+)["\']', re.MULTILINE)
 
-def run_command(command, cwd=PROJECT_ROOT):
-    """Run a shell command and return its output."""
+def run_command(args, cwd=PROJECT_ROOT):
+    """Run a command (arg list, no shell) and return its output."""
     try:
         result = subprocess.run(
-            command, shell=True, check=True, capture_output=True, text=True, cwd=cwd
-        )  # nosec
+            args, shell=False, check=True, capture_output=True, text=True, cwd=cwd
+        )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        print(f"Error running command '{command}': {e.stderr}")
+        print(f"Error running command '{args}': {e.stderr}")
         sys.exit(1)
 
 def get_current_version():
@@ -105,12 +105,12 @@ def update_source_version(new_version):
 
 def get_commits_since_last_tag():
     """Get list of commits since the last tag."""
-    last_tag = run_command("git describe --tags --abbrev=0")
+    last_tag = run_command(["git", "describe", "--tags", "--abbrev=0"])
     if not last_tag:
         # If no tag exists, get all commits
-        commits = run_command("git log --oneline").split('\n')
+        commits = run_command(["git", "log", "--oneline"]).split('\n')
     else:
-        commits = run_command(f"git log {last_tag}..HEAD --oneline").split('\n')
+        commits = run_command(["git", "log", f"{last_tag}..HEAD", "--oneline"]).split('\n')
     
     # Clean up empty lines
     return [c for c in commits if c.strip()]
@@ -183,15 +183,15 @@ def update_changelog_file(entry):
 
 def git_tag_exists(tag):
     """Check if a git tag already exists."""
-    return run_command(f"git tag -l {tag}") != ""
+    return run_command(["git", "tag", "-l", tag]) != ""
 
 def is_dirty():
     """Check if the git worktree is dirty."""
-    return run_command("git status --short") != ""
+    return run_command(["git", "status", "--short"]) != ""
 
 def get_highest_tag():
     """Get the highest semantic version tag."""
-    tags = run_command("git tag -l").split('\n')
+    tags = run_command(["git", "tag", "-l"]).split('\n')
     versions = []
     for t in tags:
         match = re.search(r'v?([\d\.]+)', t)
@@ -262,11 +262,11 @@ def main():
     
     # Phase 3: Git operations
     print("Staging changes...")
-    run_command("git add src/main.py tools/appimage/pyproject.toml CHANGELOG.md")
+    run_command(["git", "add", "src/main.py", "tools/appimage/pyproject.toml", "CHANGELOG.md"])
     print(f"Committing release v{new_version}...")
-    run_command(f'git commit -m "chore: release v{new_version}"')
+    run_command(["git", "commit", "-m", f"chore: release v{new_version}"])
     print(f"Tagging release v{new_version}...")
-    run_command(f'git tag -a v{new_version} -m "Release v{new_version}"')
+    run_command(["git", "tag", "-a", f"v{new_version}", "-m", f"Release v{new_version}"])
     
     print(f"\n✅ Release v{new_version} completed successfully!")
     print("Don't forget to push: git push origin main --tags")

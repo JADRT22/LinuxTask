@@ -7,8 +7,8 @@ __pycache__/
 venv/
 .env
 
-# User data / Recordings
-*.json
+# User data / Recordings (root-level macro files only; subdirs are source)
+/*.json
 recordings/
 
 # System files
@@ -22,4 +22,7 @@ squashfs-root/
 # Compiled binaries from experiments (must never ship in src/ or the AppImage)
 *.o
 *.so
-experimental/libei/ei_send
+.quarantine/experimental/libei/ei_send
+
+# Untracked local screenshot cache (README uses assets/demo.gif)
+assets/demo-v3.png

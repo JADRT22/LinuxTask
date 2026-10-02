@@ -47,10 +47,12 @@ subs = [
 for old, new in subs:
     assert old in src, f"pattern not found: {old}"
     src = src.replace(old, new)
-# Text labels need a smaller font to fit the 40px buttons.
+# Text labels need a smaller font to fit the 32px buttons.
+old_font = 'self.btns[1].configure(font=("DejaVu Sans", 10))'
+assert old_font in src, f"pattern not found: {old_font}"
 src = src.replace(
-    'self.btns[1].configure(font=("DejaVu Sans", 11))',
-    'self.btns[1].configure(font=("DejaVu Sans", 11))\n'
+    old_font,
+    'self.btns[1].configure(font=("DejaVu Sans", 10))\n'
     '        for b in self.btns[2:5]:\n'
     '            b.configure(font=("DejaVu Sans", 10))',
 )

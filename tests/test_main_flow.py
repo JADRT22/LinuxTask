@@ -36,7 +36,6 @@ def make_app():
     app.events_lock = threading.Lock()
     app.start_time = 0.0
     app.start_cursor_pos = None
-    app.recording = False
     app.hotkey_rec = e.KEY_F8
     app.hotkey_play = e.KEY_F9
     app.is_mapping = None

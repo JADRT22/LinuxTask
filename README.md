@@ -55,6 +55,12 @@ The driver is selected automatically from `XDG_CURRENT_DESKTOP`,
 `XDG_SESSION_TYPE` and `HYPRLAND_INSTANCE_SIGNATURE`; unsupported desktops
 with a running X server fall back to the X11 driver.
 
+> **Note:** every cell marked `(uinput)` above needs a working `/dev/uinput`
+> device. When it is missing, the app logs a warning (`"... dropped ...
+> UInput unavailable"`) and that input is skipped during replay — keyboard
+> and scroll do not silently fall back to anything else. The installer
+> configures `/dev/uinput` access (see Requirements).
+
 ## Copy-paste in 30s / Copie e rode em 30s
 
 ```bash
@@ -159,10 +165,16 @@ bundled `udev` rules therefore grant:
 python -m unittest tests.test_main_flow tests.test_jitter tests.test_coordinate_precision
 ```
 
-The core flow suite exercises recording, playback dispatch, macro validation
-and persistence headlessly by instantiating the app without a display.
-`tests/test_x11_driver.py` and `tests/test_hyprland_driver.py` additionally
-mock or exercise drivers individually.
+The command works from the repo root with no extra setup: each suite
+prepends `src/` to `sys.path` internally (alternatively, run with
+`PYTHONPATH=src`). The core flow suite exercises recording, playback
+dispatch, macro validation and persistence headlessly by instantiating
+the app without a display. `tests/test_x11_driver.py` and
+`tests/test_hyprland_driver.py` additionally mock or exercise drivers
+individually (run manually); `.quarantine/tests/test_evdev_access.py` needs real
+hardware and `tests/test_experimental_addons.py` needs numpy/Pillow plus
+a session, so neither runs in CI (see `.github/workflows/python-app.yml`
+for the exact CI list).
 
 ### Release process
 

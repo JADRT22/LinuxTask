@@ -124,11 +124,19 @@ Checklist before opening:
 python -m unittest tests.test_main_flow tests.test_jitter tests.test_coordinate_precision
 ```
 
+Run from the repo root with no extra setup: each suite prepends `src/`
+to `sys.path` internally (alternatively, run with `PYTHONPATH=src`).
+CI (`.github/workflows/python-app.yml`) executes exactly these three
+suites — nothing else.
+
 - The core flow suite exercises recording, playback dispatch, macro
   validation and persistence headlessly by instantiating the app without
   a display.
 - `tests/test_x11_driver.py` and `tests/test_hyprland_driver.py`
-  additionally mock or exercise drivers individually.
+  additionally mock or exercise drivers individually — run them manually.
+- `.quarantine/tests/test_evdev_access.py` (quarantined manual hardware check;
+  `tests/test_experimental_addons.py` (needs numpy/Pillow plus a live
+  session) never run in CI — run them manually when touching those areas.
 - Add or update tests with behavior changes. A bug fix without a
   regression test will be asked to include one.
 
