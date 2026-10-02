@@ -538,6 +538,10 @@ class LinuxTaskApp(ctk.CTk):
 
     def playback_thread(self):
         """Main playback loop, runs in a background thread."""
+        # Tally for the end-of-playback summary. Reset here (not in
+        # start_playback) so it is always owned by the running thread.
+        attempted_events = 0
+        failed_events = 0
         try:
             while self.playing:
                 if self.start_cursor_pos is not None:
@@ -574,23 +578,25 @@ class LinuxTaskApp(ctk.CTk):
                     if not self.playing:
                         break
 
-                    target_time = start_p + (ev['time'] / speed)
-                    remaining = target_time - time.monotonic()
-                    if remaining > 0:
-                        # Sliced wait: Stop/F9 takes effect promptly
-                        # instead of only after the full gap elapses.
-                        deadline = time.monotonic() + remaining
-                        while self.playing:
-                            left = deadline - time.monotonic()
-                            if left <= 0:
-                                break
-                            time.sleep(min(left, 0.05))
-
-                    if not self.playing:
-                        break
-
-                    # One bad event must not abort the whole macro.
+                    # One bad event must not abort the whole macro: the timing
+                    # math reads ev['time'] too, so it belongs inside this try.
+                    attempted_events += 1
                     try:
+                        target_time = start_p + (ev['time'] / speed)
+                        remaining = target_time - time.monotonic()
+                        if remaining > 0:
+                            # Sliced wait: Stop/F9 takes effect promptly
+                            # instead of only after the full gap elapses.
+                            deadline = time.monotonic() + remaining
+                            while self.playing:
+                                left = deadline - time.monotonic()
+                                if left <= 0:
+                                    break
+                                time.sleep(min(left, 0.05))
+
+                        if not self.playing:
+                            break
+
                         if ev['type'] == "pos":
                             self.manager.move_cursor(ev['x'], ev['y'])
 
@@ -649,14 +655,21 @@ class LinuxTaskApp(ctk.CTk):
                                         "mouse button (code=%d)", ev['code']
                                     )
                     except Exception as exc:
+                        failed_events += 1
                         logger.warning(
                             "Playback event %d (%s) failed, skipping: %s",
-                            i, ev.get('type'), exc
+                            i, ev.get('type'), exc, exc_info=True
                         )
                         continue
 
                 if not self.loop_enabled:
                     break
+
+            if failed_events > 0:
+                logger.warning(
+                    "Playback finished with %d failed events out of %d.",
+                    failed_events, attempted_events
+                )
 
         except Exception as exc:
             logger.error("Playback error: %s", exc)
@@ -695,6 +708,14 @@ class LinuxTaskApp(ctk.CTk):
 
     def _validate_event(self, ev):
         if not isinstance(ev, dict):
+            return False
+        # playback_thread reads ev['time'] for every event (src/main.py:581)
+        # before dispatching it, so a non-numeric 'time' there aborts the whole
+        # macro. A missing 'time' stays valid (legacy macros omit it) but is
+        # caught per-event by the try in playback_thread; only reject a
+        # 'time' that is present and not a real number.
+        if "time" in ev and (not isinstance(ev["time"], (int, float))
+                             or isinstance(ev["time"], bool)):
             return False
         ev_type = ev.get("type")
         if ev_type == "pos":
