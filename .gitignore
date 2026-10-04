@@ -5,6 +5,7 @@ __pycache__/
 
 # Virtual Environment
 venv/
+.venv/
 .env
 
 # User data / Recordings (root-level macro files only; subdirs are source)

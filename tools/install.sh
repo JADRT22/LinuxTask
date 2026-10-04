@@ -12,7 +12,24 @@ if [ -z "$REAL_USER" ] && [ -n "${PKEXEC_UID:-}" ]; then
     REAL_USER="$(id -nu "$PKEXEC_UID" 2>/dev/null || true)"
 fi
 REAL_USER="${REAL_USER:-${LOGNAME:-$USER}}"
+[ -n "$REAL_USER" ] || { echo "[ERROR] Could not determine the real user." >&2; exit 1; }
 USER_HOME=$(eval echo "~$REAL_USER")
+
+fail() {
+    echo "[ERROR] $1" >&2
+    echo "[ERROR] Installation FAILED." >&2
+    exit 1
+}
+
+# Run a command as the real (non-root) user, so files like .venv are
+# never created root-owned when this script runs via sudo/pkexec.
+as_user() {
+    if [ "$(id -u)" -eq 0 ] && [ "$REAL_USER" != "root" ]; then
+        sudo -u "$REAL_USER" "$@"
+    else
+        "$@"
+    fi
+}
 DESKTOP_DIR="$USER_HOME/.local/share/applications"
 UDEV_RULE_PATH="/etc/udev/rules.d/99-linuxtask.rules"
 
@@ -65,25 +82,31 @@ install_dbus_python_deps() {
 
 echo "Starting LinuxTask installation..."
 
-# 0. Install Python dependencies
-echo "[INFO] Installing Python dependencies..."
-if [ -f "$REPO_ROOT/requirements.txt" ]; then
-    pip3 install --user -r "$REPO_ROOT/requirements.txt" 2>/dev/null || \
-    python3 -m pip install --user -r "$REPO_ROOT/requirements.txt" 2>/dev/null || {
-        echo "[WARN] pip install from requirements.txt failed. Trying individually..."
-        pip3 install --user customtkinter evdev python-xlib 2>/dev/null || \
-        python3 -m pip install --user customtkinter evdev python-xlib 2>/dev/null || {
-            echo "[ERROR] Could not install Python dependencies."
-            echo "        Please install manually: pip3 install customtkinter evdev python-xlib"
-        }
-    }
-else
-    pip3 install --user customtkinter evdev python-xlib 2>/dev/null || \
-    python3 -m pip install --user customtkinter evdev python-xlib 2>/dev/null || {
-        echo "[ERROR] Could not install Python dependencies."
-        echo "        Please install manually: pip3 install customtkinter evdev python-xlib"
-    }
+# 0. Install Python dependencies (fail-fast: no silent fallbacks).
+# evdev + python-xlib come from the distro; customtkinter is NOT packaged
+# on Arch/CachyOS and distro Pythons here are externally managed (PEP 668
+# blocks `pip install --user`), so it goes into a project venv that still
+# sees distro packages (dbus, gi, evdev) via --system-site-packages.
+# Never --break-system-packages.
+echo "[INFO] Installing system packages (evdev, python-xlib, Tk)..."
+SYS_MGR=$(detect_pkg_manager)
+case "$SYS_MGR" in
+    apt)    install_package python3-evdev && install_package python3-xlib && install_package python3-tk ;;
+    pacman) install_package python-evdev && install_package python-xlib && install_package tk ;;
+    dnf)    install_package python3-evdev && install_package python3-xlib && install_package python3-tkinter ;;
+    *)      fail "Unknown package manager. Install manually: evdev, python-xlib, Tk, xdotool." ;;
+esac || fail "Could not install system Python packages."
+
+if [ ! -x "$REPO_ROOT/.venv/bin/python" ]; then
+    echo "[INFO] Creating project venv (.venv)..."
+    as_user python3 -m venv --system-site-packages "$REPO_ROOT/.venv" \
+        || fail "Could not create .venv (missing python3-venv / python-virtualenv?)."
+    if [ "$(id -u)" -eq 0 ]; then
+        chown -R "$REAL_USER" "$REPO_ROOT/.venv" || fail "Could not fix .venv ownership."
+    fi
 fi
+as_user "$REPO_ROOT/.venv/bin/pip" install customtkinter \
+    || fail "Could not install customtkinter into .venv."
 
 # 0.1 Distro-provided D-Bus bindings for the KDE Wayland driver.
 # Best-effort: not fatal on non-KDE desktops.
@@ -92,11 +115,22 @@ install_dbus_python_deps || true
 # Also ensure xdotool is available (needed for X11 desktops like Cinnamon)
 if ! command -v xdotool >/dev/null 2>&1; then
     echo "[INFO] Installing xdotool..."
-    install_package xdotool || echo "[WARN] Could not install xdotool. Install manually: sudo apt install xdotool"
+    install_package xdotool || fail "Could not install xdotool."
 fi
 
 # 1. Ensure 'input' group exists
-sudo groupadd -f input
+sudo groupadd -f input || fail "Could not create the 'input' group."
+
+# 1b. Add the real user to the 'input' group. A fresh member MUST log
+# out and back in (tracked in NEEDS_LOGOUT), even if the ACLs below
+# already grant immediate access.
+NEEDS_LOGOUT="no"
+if id -nG "$REAL_USER" 2>/dev/null | tr ' ' '\n' | grep -qx input; then
+    echo "[INFO] User $REAL_USER is already in the 'input' group."
+else
+    sudo gpasswd -a "$REAL_USER" input || fail "Could not add $REAL_USER to the 'input' group."
+    NEEDS_LOGOUT="yes"
+fi
 
 # 1. Ensure execute permissions
 chmod +x "$APP_DIR/run.sh"
@@ -132,11 +166,10 @@ fi
 echo "[INFO] Configuring permanent permissions (requires sudo)..."
 sudo cp "$APP_DIR/99-linuxtask.rules" "$UDEV_RULE_PATH"
 
-# 6. Add real user to input group
-sudo gpasswd -a "$REAL_USER" input
-
-# 7. Reload udev rules
-sudo udevadm control --reload-rules && sudo udevadm trigger
+# 7. Reload udev rules. These MUST really apply: a silent failure here
+# means recording captures zero events with no error message.
+sudo udevadm control --reload-rules || fail "udev reload failed."
+sudo udevadm trigger || fail "udev trigger failed (device rules not applied)."
 
 # 7. Grant IMMEDIATE access (avoids logout/login on first run)
 echo "[INFO] Granting immediate hardware access..."
@@ -144,16 +177,38 @@ echo "[INFO] Granting immediate hardware access..."
 # Ensure setfacl is available
 if ! command -v setfacl >/dev/null 2>&1; then
     echo "[WARN] setfacl not found. Installing 'acl' package..."
-    install_package acl || echo "[WARN] Could not install acl automatically."
+    install_package acl || fail "Could not install 'acl' (needed for immediate access)."
 fi
 
 if command -v setfacl >/dev/null 2>&1; then
     # uinput needs write (virtual device for replay); event* devices are
     # read-only (recording only) to avoid granting input injection rights.
-    sudo setfacl -m "u:$REAL_USER:rw" /dev/uinput
+    sudo setfacl -m "u:$REAL_USER:rw" /dev/uinput || fail "Could not grant uinput access."
     for dev in /dev/input/event*; do
-        [ -e "$dev" ] && sudo setfacl -m "u:$REAL_USER:r" "$dev"
+        [ -e "$dev" ] || continue
+        sudo setfacl -m "u:$REAL_USER:r" "$dev" || fail "Could not grant read access on $dev."
     done
+fi
+
+# 8. Post-install smoke test, checked AS the real user (not root:
+# root can read everything, which would hide permission problems).
+echo "[INFO] Running post-install checks..."
+"$REPO_ROOT/.venv/bin/python" -c "import evdev, customtkinter" 2>/dev/null \
+    || fail "Python check failed: evdev/customtkinter not importable from .venv."
+READABLE="no"
+for dev in /dev/input/event*; do
+    if sudo -u "$REAL_USER" test -r "$dev" 2>/dev/null; then
+        READABLE="yes"
+        break
+    fi
+done
+if [ "$READABLE" != "yes" ]; then
+    fail "No readable /dev/input/event* for $REAL_USER. Log out and back in, then re-run ./tools/install.sh."
+fi
+if [ "$NEEDS_LOGOUT" = "yes" ]; then
+    echo "[NOTE] $REAL_USER was just added to the 'input' group."
+    echo "[NOTE] ACLs already grant immediate access, but group-based access"
+    echo "[NOTE] needs one logout/login. If hotkeys fail, log out and back in."
 fi
 
 echo "Installation complete!"
