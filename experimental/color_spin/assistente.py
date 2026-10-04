@@ -30,9 +30,12 @@ import sys
 import time
 
 _HERE = os.path.abspath(os.path.dirname(__file__))
-sys.path.insert(0, os.path.join(_HERE, "..", "..", "src"))
-sys.path.insert(0, os.path.join(_HERE, ".."))  # capture/vision (mesma pasta)
-sys.path.insert(0, os.path.join(_HERE, "..", "image_click"))
+for p in (os.path.join(_HERE, "..", "..", "src"),
+          os.path.join(_HERE, ".."),  # capture/vision (experimental/)
+          os.path.join(_HERE, "..", "image_click")):
+    p = os.path.abspath(p)
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 import numpy as np  # noqa: E402
 from PIL import Image, ImageTk  # noqa: E402
