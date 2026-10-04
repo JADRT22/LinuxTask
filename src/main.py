@@ -225,6 +225,17 @@ class LinuxTaskApp(ctk.CTk):
                     self.handle_play_key()
                 elif action == "play_finished":
                     self.btn_play.configure(text="▶", fg_color="#388e3c")
+                elif action == "no_devices":
+                    try:
+                        import tkinter.messagebox as mb
+                        mb.showwarning(
+                            "LinuxTask - No input devices",
+                            "No readable input devices found.\n\n"
+                            "Global hotkeys (F8/F9) and recording will not work.\n\n"
+                            "Fix: run ./tools/install.sh, confirm you are in the "
+                            "'input' group (groups $USER), then log out and back in.")
+                    except Exception:
+                        logger.debug("Failed to show warning dialog.", exc_info=True)
         except queue.Empty:
             pass
         finally:
@@ -311,8 +322,16 @@ class LinuxTaskApp(ctk.CTk):
 
     def get_input_devices(self):
         """Returns list of accessible input devices."""
+        # NOTE: python-evdev >= 2.0 only lists readable+WRITABLE devices
+        # by default, but our udev rule grants event* READ-ONLY on purpose
+        # (recording only listens). Ask for readable devices explicitly;
+        # fall back to the old no-arg call on evdev 1.x.
+        try:
+            paths = evdev.list_devices(writable=False)
+        except TypeError:
+            paths = evdev.list_devices()
         devices = []
-        for path in evdev.list_devices():
+        for path in paths:
             try:
                 devices.append(evdev.InputDevice(path))
             except (PermissionError, OSError) as exc:
@@ -325,8 +344,11 @@ class LinuxTaskApp(ctk.CTk):
         if not devices:
             logger.warning(
                 "No input devices accessible. "
-                "Global hotkeys and recording will not work."
+                "Global hotkeys and recording will not work. "
+                "Fix: re-run ./tools/install.sh, check membership in "
+                "the 'input' group (groups $USER), then log out and back in."
             )
+            self._ui_queue.put("no_devices")
             return
         self._input_devices = devices
         logger.info("Listening on %d input devices.", len(devices))
