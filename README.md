@@ -183,6 +183,10 @@ bundled `udev` rules therefore grant:
   injected events go through the kernel's sanctioned input path or through
   compositor APIs, never into your physical devices.
 
+Before the first recording ever starts, the app warns that recording
+captures *every* key pressed while it is on (including passwords typed
+in other windows) and offers "Don't show again".
+
 ## Development
 
 ### Tests

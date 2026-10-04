@@ -54,6 +54,22 @@ MAX_DEDUPE_EVICT = 10000
 # any device with this name so replayed events are not read back (echo).
 VIRTUAL_DEVICE_NAME = "LinuxTask-Virtual"
 
+CONFIG_DIR_NAME = "linuxtask"
+CONFIG_FILE_NAME = "config.json"
+
+# Shown ONCE per machine before the first recording ever starts.
+PASSWORD_WARNING_TEXT = (
+    "Recording captures EVERY key you press while it is on — "
+    "including usernames, passwords, credit-card numbers, and "
+    "private messages typed in any window.\n\n"
+    "Do not type sensitive information while the red (■) "
+    "indicator is showing. Stop recording (F8) before logging in "
+    "anywhere."
+)
+RECORDING_TOOLTIP_TEXT = (
+    "RECORDING - every key, including passwords, is being captured."
+)
+
 
 class ToolTip:
     """Minimal hover tooltip (customtkinter has no built-in one).
@@ -156,6 +172,7 @@ class LinuxTaskApp(ctk.CTk):
         # _poll_hotkeys(). Never call tkinter methods (after/configure)
         # directly from listener/playback threads.
         self._ui_queue = queue.Queue()
+        self.app_config = self._load_app_config()
         self.start_cursor_pos = None
         self.init_uinput()
 
@@ -528,11 +545,129 @@ class LinuxTaskApp(ctk.CTk):
                 dev.name, exc
             )
 
+    def _config_path(self):
+        """Path of the persistent app config file.
+
+        Respects XDG_CONFIG_HOME, defaulting to ~/.config.
+        """
+        base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
+            os.path.expanduser("~"), ".config"
+        )
+        return os.path.join(base, CONFIG_DIR_NAME, CONFIG_FILE_NAME)
+
+    def _load_app_config(self):
+        """Read the persistent config; return {} on any problem."""
+        try:
+            with open(self._config_path(), "r", encoding="utf-8") as fh:
+                cfg = json.load(fh)
+            return cfg if isinstance(cfg, dict) else {}
+        except (OSError, ValueError) as exc:
+            logger.debug("No usable app config yet (%s).", exc)
+            return {}
+
+    def _save_app_config(self):
+        """Persist app_config; warn only (never break the app)."""
+        try:
+            path = self._config_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(self.app_config, fh)
+        except OSError as exc:
+            logger.warning("Could not save app config: %s", exc)
+
+    def _confirm_password_warning(self):
+        """First-recording warning. Returns True when recording may start.
+
+        Runs on the UI thread (toolbar button or _poll_hotkeys), so the
+        evdev listener threads keep running and no input event is lost --
+        recording simply has not started yet. Cancel (or closing the
+        window) returns False and recording never starts.
+        """
+        # Re-entrancy guard: wait_window() below runs a nested event loop
+        # in which _poll_hotkeys keeps firing, so a queued "rec" could
+        # call this again and open a second dialog. __dict__ lookup (not
+        # getattr): bare test instances built via __new__ have no attrs,
+        # and getattr() on a missing attr raises RecursionError here.
+        if self.__dict__.get("_warning_open"):
+            return False
+        self.__dict__["_warning_open"] = True
+        try:
+            dlg = tkinter.Toplevel(self)
+            dlg.title("LinuxTask - Sensitive input")
+            dlg.attributes("-topmost", True)
+            dlg.transient(self)
+            dlg.resizable(False, False)
+            outcome = {"proceed": False, "hide": False}
+            hide_var = tkinter.BooleanVar(value=False)
+
+            ctk.CTkLabel(
+                dlg, text=PASSWORD_WARNING_TEXT, wraplength=320,
+                font=("Arial", 12),
+            ).pack(padx=16, pady=(16, 8))
+            ctk.CTkCheckBox(
+                dlg, text="Don't show again", variable=hide_var,
+            ).pack(padx=16, pady=4, anchor="w")
+
+            row = ctk.CTkFrame(dlg, fg_color="transparent")
+            row.pack(padx=16, pady=(8, 16), fill="x")
+
+            def _ok():
+                outcome["proceed"] = True
+                outcome["hide"] = bool(hide_var.get())
+                dlg.destroy()
+
+            def _cancel():
+                dlg.destroy()
+
+            ctk.CTkButton(row, text="Cancel", command=_cancel).pack(
+                side="left", expand=True, padx=(0, 4))
+            ctk.CTkButton(row, text="Start recording", command=_ok).pack(
+                side="left", expand=True, padx=(4, 0))
+            dlg.protocol("WM_DELETE_WINDOW", _cancel)
+            try:
+                # Visible before grabbing so the window manager can
+                # focus it; if the grab fails the dialog still works.
+                dlg.wait_visibility()
+                dlg.grab_set()
+            except tkinter.TclError:
+                logger.debug(
+                    "Dialog grab failed; continuing without grab."
+                )
+            self.wait_window(dlg)
+
+            if outcome["hide"]:
+                cfg = self.__dict__.get("app_config")
+                if cfg is None:
+                    cfg = self.app_config = {}
+                cfg["hide_password_warning"] = True
+                self._save_app_config()
+            # A hotkey pressed while the dialog was open must not fire
+            # right after it closes (double-toggle).
+            self._drain_hotkey_actions()
+            return outcome["proceed"]
+        finally:
+            self.__dict__["_warning_open"] = False
+
+    def _drain_hotkey_actions(self):
+        """Drop stale queued hotkey actions (they went obsolete)."""
+        try:
+            while True:
+                self._hotkey_actions.get_nowait()
+        except queue.Empty:
+            pass
+
     def toggle_record(self):
         """Toggles recording state."""
         if self.playing:
             return
         if not self.recording:
+            # NOTE: __dict__ lookups (not getattr): bare test instances
+            # built via __new__ have no app_config attr, and getattr()
+            # on a missing attr raises RecursionError here.
+            cfg = self.__dict__.get("app_config") or {}
+            if (not cfg.get("hide_password_warning")
+                    and not self._confirm_password_warning()):
+                return  # Cancelled (or dialog already open): don't record.
             self.recording = True
             with self.events_lock:
                 self._rel_dirty = False
@@ -550,6 +685,8 @@ class LinuxTaskApp(ctk.CTk):
             # monotonic: event timestamps below are deltas from this base,
             # so a clock jump mid-recording must not skew them.
             self.start_time = time.monotonic()
+            self.rec_tip = ToolTip(
+                self.btn_rec, RECORDING_TOOLTIP_TEXT)
             self.btn_rec.configure(text="■", fg_color="#b71c1c")
             logger.info(
                 "Recording started. Start pos: %s",
@@ -557,6 +694,7 @@ class LinuxTaskApp(ctk.CTk):
             )
         else:
             self.recording = False
+            self.rec_tip = ToolTip(self.btn_rec, "Record (F8)")
             self.btn_rec.configure(text="●", fg_color="#d32f2f")
             with self.events_lock:
                 ev_count = len(self.events)

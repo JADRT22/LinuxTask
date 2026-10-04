@@ -14,6 +14,7 @@ License: MIT
 import json
 import os
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -45,6 +46,8 @@ def make_app():
     app._processed_ids = set()
     app._processed_ids_lock = threading.Lock()
     app._ui_queue = __import__('queue').Queue()
+    # Skip the first-recording password dialog in flow tests.
+    app.app_config = {"hide_password_warning": True}
     app.uinput_device = None
     app.humanize_enabled = MagicMock(return_value=False)
     app.humanize_enabled.get.return_value = False
@@ -629,6 +632,48 @@ class TestHotkeyQueuePolling(unittest.TestCase):
             self.app._poll_hotkeys()
         except Exception as exc:
             self.fail(f"_poll_hotkeys raised with empty queue: {exc}")
+
+
+class TestPasswordWarningGate(unittest.TestCase):
+    """First-recording dialog: cancel, re-entrancy, persistence."""
+
+    def make_app(self):
+        app = main.LinuxTaskApp.__new__(main.LinuxTaskApp)
+        app.playing = False
+        app.recording = False
+        app.app_config = {}
+        app._hotkey_actions = __import__('queue').Queue()
+        return app
+
+    def test_cancel_does_not_start_recording(self):
+        app = self.make_app()
+        with patch.object(app, "_confirm_password_warning",
+                           return_value=False):
+            app.toggle_record()
+        self.assertFalse(app.recording)
+
+    def test_reentrant_dialog_returns_false_without_second_dialog(self):
+        """A 'rec' queued while the dialog is open must not open another."""
+        app = self.make_app()
+        app.__dict__["_warning_open"] = True  # simulate open dialog
+        with patch.object(main.tkinter, "Toplevel",
+                           side_effect=AssertionError("must not open")):
+            self.assertFalse(
+                main.LinuxTaskApp._confirm_password_warning(app))
+        self.assertTrue(app.__dict__["_warning_open"])  # owner's to clear
+
+    def test_ok_with_dont_show_again_persists(self):
+        app = self.make_app()
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}):
+                path = app._config_path()
+                self.assertTrue(path.startswith(tmp))
+                app.app_config["hide_password_warning"] = True
+                app._save_app_config()
+                fresh = self.make_app()
+                self.assertTrue(
+                    fresh._load_app_config().get("hide_password_warning"))
+                self.assertTrue(os.path.isfile(path))
 
 
 if __name__ == '__main__':
