@@ -45,7 +45,7 @@ from drivers.factory import AutoDetectDriver
 from recorder import Recorder, VIRTUAL_DEVICE_NAME
 from playback import Playback
 
-APP_VERSION = "3.1.0"
+APP_VERSION = "3.1.1"
 
 CONFIG_DIR_NAME = "linuxtask"
 CONFIG_FILE_NAME = "config.json"
