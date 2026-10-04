@@ -81,8 +81,10 @@ with a running X server fall back to the X11 driver.
   fallback and 1920×1080 as a last resort.
 - Cursor position is read with `xdotool getmouselocation`, which needs
   XWayland; without it the driver tracks its last known position.
-- When the portal session is not ready, cursor moves are currently
-  skipped without a visible warning.
+- When the portal session is not ready or a portal mouse call fails, the
+  driver logs a WARNING (once per reason) and the app shows a one-time
+  dialog; the event falls back to `uinput` when available, otherwise it is
+  skipped.
 
 ## Copy-paste in 30s
 

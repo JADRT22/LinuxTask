@@ -29,6 +29,9 @@ class KdeWaylandDriver(DesktopManager):
         self._portal_ready = False
         self._dbus_loop = None
         self._bus = None
+        # Optional UI hook: main injects it so a skipped event becomes a
+        # visible notice instead of log-only silence.
+        self.warn_fn = None
         self.screen_width = 0
         self.screen_height = 0
         self._detect_resolution()
@@ -200,6 +203,19 @@ class KdeWaylandDriver(DesktopManager):
         except Exception as exc:
             logger.error("Portal init failed: %s", exc)
 
+    def _warn_once(self, key, msg, *args):
+        """WARNING once per reason; repeats at debug so a long macro
+        with a dead portal does not flood the log. The first hit also
+        goes to warn_fn so the app can show the notice in the UI."""
+        warned = self.__dict__.setdefault('_warned', set())
+        if key in warned:
+            logger.debug(msg, *args)
+        else:
+            warned.add(key)
+            logger.warning(msg, *args)
+            if self.warn_fn:
+                self.warn_fn(msg % args)
+
     def get_cursor_pos(self):
         try:
             out = subprocess.check_output(
@@ -216,8 +232,12 @@ class KdeWaylandDriver(DesktopManager):
         return self._cur_x, self._cur_y
 
     def move_cursor(self, x, y):
+        """True when the portal handled the move, False when it was skipped."""
         if not self._portal_ready:
-            return
+            self._warn_once(
+                "move_cursor", "Portal not ready; move to (%d, %d) skipped.",
+                x, y)
+            return False
         try:
             # Dead reckoning: compute the delta from our own tracked
             # position, NOT from xdotool. XWayland never reports our
@@ -229,13 +249,15 @@ class KdeWaylandDriver(DesktopManager):
             dx = cx - self._cur_x
             dy = cy - self._cur_y
             if dx == 0 and dy == 0:
-                return
+                return True
             self._portal.NotifyPointerMotion(
                 dbus.ObjectPath(self._session_handle), {}, dx, dy
             )
             self._cur_x, self._cur_y = cx, cy
+            return True
         except Exception as exc:
-            logger.error("Portal move_cursor failed: %s", exc)
+            self._warn_once("move_cursor", "Portal move_cursor failed: %s", exc)
+            return False
 
     def _sync_tracked_pos(self):
         """Best-effort refresh of the tracked position from the system."""
@@ -257,6 +279,8 @@ class KdeWaylandDriver(DesktopManager):
 
     def move_relative(self, dx, dy):
         if not self._portal_ready:
+            self._warn_once(
+                "move_relative", "Portal not ready; relative move skipped.")
             return False
         try:
             self._lazy_init_tracked_pos()
@@ -268,15 +292,20 @@ class KdeWaylandDriver(DesktopManager):
             self._cur_y += int(dy)
             return True
         except Exception as exc:
-            logger.error("Portal move_relative failed: %s", exc)
+            self._warn_once(
+                "move_relative", "Portal move_relative failed: %s", exc)
             return False
 
     def mouse_button(self, button, pressed):
         if not self._portal_ready:
+            self._warn_once(
+                "mouse_button", "Portal not ready; button %d skipped.", button)
             return False
         try:
             btn = BTN_MAP.get(button)
             if btn is None:
+                self._warn_once(
+                    "mouse_button", "No portal mapping for button %d.", button)
                 return False
             state = 1 if pressed else 0
             self._portal.NotifyPointerButton(
@@ -284,7 +313,8 @@ class KdeWaylandDriver(DesktopManager):
             )
             return True
         except Exception as exc:
-            logger.error("Portal mouse_button failed: %s", exc)
+            self._warn_once(
+                "mouse_button", "Portal mouse_button failed: %s", exc)
             return False
 
     def _lazy_init_tracked_pos(self):
@@ -307,6 +337,7 @@ class KdeWaylandDriver(DesktopManager):
     def scroll(self, direction, clicks=1):
         """Performs scroll via portal. Returns True if handled."""
         if not self._portal_ready:
+            self._warn_once("scroll", "Portal not ready; scroll skipped.")
             return False
         dy = clicks * 3.0 if direction == 'down' else -clicks * 3.0
         try:
@@ -315,7 +346,7 @@ class KdeWaylandDriver(DesktopManager):
             )
             return True
         except Exception as exc:
-            logger.debug("Portal scroll failed: %s", exc)
+            self._warn_once("scroll", "Portal scroll failed: %s", exc)
             return False
 
     def self_test(self):

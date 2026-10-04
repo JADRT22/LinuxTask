@@ -63,6 +63,15 @@ class Playback:
         # start_playback) so it is always owned by the running thread.
         attempted_events = 0
         failed_events = 0
+        # One UI warning per playback when the driver declines an event
+        # (portal not ready / failed call): the dialog must not fire per event.
+        warned_ui = False
+
+        def note_decline():
+            nonlocal warned_ui
+            if not warned_ui:
+                warned_ui = True
+                self._ui_queue.put("driver_warning")
         try:
             while self.playing:
                 if self.start_cursor_pos is not None:
@@ -119,7 +128,8 @@ class Playback:
                             break
 
                         if ev['type'] == "pos":
-                            self.manager.move_cursor(ev['x'], ev['y'])
+                            if self.manager.move_cursor(ev['x'], ev['y']) is False:
+                                note_decline()
 
                         elif ev['type'] == "rel":
                             dx, dy = ev['dx'], ev['dy']
@@ -129,6 +139,8 @@ class Playback:
                                 dx, dy, delay = self._apply_humanize(dx, dy, delay)
 
                             handled = self.manager.move_relative(dx, dy)
+                            if not handled:
+                                note_decline()
                             if not handled and self.uinput_device is not None:
                                 self.uinput_device.write(e.EV_REL, e.REL_X, dx)
                                 self.uinput_device.write(e.EV_REL, e.REL_Y, dy)
@@ -144,6 +156,7 @@ class Playback:
                                 ev['direction'], ev.get('clicks', 1)
                             )
                             if not handled:
+                                note_decline()
                                 if self.uinput_device is not None:
                                     wheel = 1 if ev['direction'] == 'up' else -1
                                     for _ in range(ev.get('clicks', 1)):
@@ -163,6 +176,7 @@ class Playback:
                                 handled = self.manager.mouse_button(ev['code'], ev['val'] == 1)
                                 if handled:
                                     continue
+                                note_decline()
 
                             if self.uinput_device is not None:
                                 self.uinput_device.write(

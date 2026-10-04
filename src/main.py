@@ -165,6 +165,11 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         # _poll_hotkeys(). Never call tkinter methods (after/configure)
         # directly from listener/playback threads.
         self._ui_queue = queue.Queue()
+        # KDE portal driver reports skipped input through warn_fn; push it
+        # on the same worker-safe queue (_poll_hotkeys shows it once).
+        if hasattr(self.manager, "warn_fn"):
+            self.manager.warn_fn = (
+                lambda _msg: self._ui_queue.put("driver_warning"))
         self.app_config = self._load_app_config()
         self.start_cursor_pos = None
         self.init_uinput()
@@ -239,6 +244,24 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
                     self.handle_play_key()
                 elif action == "play_finished":
                     self.btn_play.configure(text="▶", fg_color="#388e3c")
+                elif action == "driver_warning":
+                    if not self.__dict__.get("_driver_warning_shown"):
+                        self.__dict__["_driver_warning_shown"] = True
+                        try:
+                            import tkinter.messagebox as mb
+                            mb.showwarning(
+                                "LinuxTask - Driver warning",
+                                "The desktop driver could not replay part of "
+                                "the macro (portal not ready or the call "
+                                "failed).\n\nInput fell back to the virtual "
+                                "uinput device when possible, otherwise it "
+                                "was skipped.\n\nOn KDE Wayland, approve the "
+                                "portal dialog on first run. Details are in "
+                                "the log.")
+                        except Exception:
+                            logger.debug(
+                                "Failed to show driver warning dialog.",
+                                exc_info=True)
                 elif action == "no_devices":
                     try:
                         import tkinter.messagebox as mb

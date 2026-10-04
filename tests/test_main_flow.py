@@ -346,8 +346,16 @@ class TestPlaybackDispatch(unittest.TestCase):
         self.assertIn((e.EV_KEY, e.KEY_A, 1), key_writes)
         self.assertTrue(self.app.uinput_device.syn.called)
 
-        # UI reset was queued (thread-safe path).
-        self.assertEqual(self.app._ui_queue.get_nowait(), "play_finished")
+        # UI: declines queue a one-shot warning; reset queued last.
+        from queue import Empty
+        items = []
+        try:
+            while True:
+                items.append(self.app._ui_queue.get_nowait())
+        except Empty:
+            pass
+        self.assertIn("driver_warning", items)
+        self.assertEqual(items[-1], "play_finished")
 
     def test_driver_handled_rel_and_button_skip_uinput(self):
         self.app.uinput_device = MagicMock()
@@ -382,7 +390,16 @@ class TestPlaybackDispatch(unittest.TestCase):
         while self.app.playing and time.monotonic() < deadline:
             time.sleep(0.01)
         self.assertFalse(self.app.playing)
-        self.assertEqual(self.app._ui_queue.get_nowait(), "play_finished")
+        # Drops queue a one-shot UI warning before the reset action.
+        from queue import Empty
+        items = []
+        try:
+            while True:
+                items.append(self.app._ui_queue.get_nowait())
+        except Empty:
+            pass
+        self.assertIn("driver_warning", items)
+        self.assertEqual(items[-1], "play_finished")
 
     def test_speed_divides_event_times(self):
         self.app.events = [
