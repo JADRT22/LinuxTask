@@ -50,6 +50,10 @@ APP_VERSION = "3.0.2"
 MAX_DEDUPE_IDS = 100000
 MAX_DEDUPE_EVICT = 10000
 
+# Name of our own virtual replay device (see init_uinput). Listeners skip
+# any device with this name so replayed events are not read back (echo).
+VIRTUAL_DEVICE_NAME = "LinuxTask-Virtual"
+
 
 class ToolTip:
     """Minimal hover tooltip (customtkinter has no built-in one).
@@ -253,7 +257,7 @@ class LinuxTaskApp(ctk.CTk):
                 e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL]
             }
             self.uinput_device = evdev.UInput(
-                cap, name="LinuxTask-Virtual", vendor=0x1234, product=0x5678
+                cap, name=VIRTUAL_DEVICE_NAME, vendor=0x1234, product=0x5678
             )
             logger.info("UInput virtual device created successfully.")
         except PermissionError:
@@ -330,12 +334,42 @@ class LinuxTaskApp(ctk.CTk):
             paths = evdev.list_devices(writable=False)
         except TypeError:
             paths = evdev.list_devices()
+        # NOTE: __dict__ lookup (not getattr): same reason as in
+        # device_loop — on instances built via __new__ (unit tests, no
+        # display) getattr() on a missing attr raises RecursionError
+        # instead of returning the default. Verified empirically.
+        own = self.__dict__.get("uinput_device")
+        own_name = None
+        if own is not None:
+            try:
+                own_name = own.name
+            except (OSError, AttributeError):
+                own_name = None
         devices = []
         for path in paths:
             try:
-                devices.append(evdev.InputDevice(path))
+                dev = evdev.InputDevice(path)
             except (PermissionError, OSError) as exc:
                 logger.debug("Cannot open %s: %s", path, exc)
+                continue
+            # Skip our own virtual replay device: playback writes key and
+            # mouse events through it, and without this filter the listener
+            # threads would read those replayed events back (echo),
+            # re-triggering the F8/F9 hotkeys mid-playback. The match is by
+            # device NAME, so a second app instance would also ignore the
+            # first one's virtual device — acceptable, since each instance
+            # only replays through its own UInput.
+            try:
+                dev_name = dev.name
+            except (OSError, AttributeError):
+                dev_name = None
+            if (own_name is not None and dev_name is not None
+                    and dev_name == own_name == VIRTUAL_DEVICE_NAME):
+                logger.debug(
+                    "Skipping own virtual device '%s' (%s).", dev_name, path
+                )
+                continue
+            devices.append(dev)
         return devices
 
     def global_hardware_listener(self):

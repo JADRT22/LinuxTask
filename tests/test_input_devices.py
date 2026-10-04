@@ -63,6 +63,42 @@ class TestGetInputDevices(unittest.TestCase):
             devices = app.get_input_devices()
         self.assertEqual(devices, [])
 
+class TestOwnVirtualDeviceSkipped(unittest.TestCase):
+    def test_own_uinput_device_excluded(self):
+        """Replayed events must not be read back (uinput echo)."""
+        app = make_app()
+        fake_uinput = MagicMock()
+        fake_uinput.name = "LinuxTask-Virtual"
+        app.uinput_device = fake_uinput
+
+        own_dev = MagicMock()
+        own_dev.name = "LinuxTask-Virtual"
+        real_dev = MagicMock()
+        real_dev.name = "AT Translated Set 2 keyboard"
+
+        def fake_input(path):
+            return {"event99": own_dev, "event0": real_dev}[path]
+
+        with patch.object(main.evdev, "list_devices",
+                          return_value=["event99", "event0"]), \
+             patch.object(main.evdev, "InputDevice",
+                          side_effect=fake_input):
+            devices = app.get_input_devices()
+        self.assertEqual(devices, [real_dev])
+
+    def test_no_filter_without_uinput(self):
+        """No virtual device -> everything listed, no crash on bare app."""
+        app = make_app()  # __new__: no uinput_device attr at all
+        dev = MagicMock()
+        dev.name = "Logitech USB Receiver"
+        with patch.object(main.evdev, "list_devices",
+                          return_value=["event5"]), \
+             patch.object(main.evdev, "InputDevice",
+                          return_value=dev):
+            devices = app.get_input_devices()
+        self.assertEqual(devices, [dev])
+
+
 
 if __name__ == "__main__":
     unittest.main()
