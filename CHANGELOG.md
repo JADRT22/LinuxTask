@@ -72,13 +72,16 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ### Fixed
 - **Readable-only input devices on evdev 2.x**: device enumeration now
-  requests read-only access (matching the `0440` udev rule) with a fallback
-  for older evdev, instead of returning an empty list; an actionable warning
-  dialog appears when no devices are accessible.
-- **Arch-proof installer**: `tools/install.sh` installs the distro
-  evdev/xlib/Tk packages, creates a `.venv` with system site packages,
-  fails fast with a logout notice, guards the real user under sudo, and
-  smoke-tests the app; `tools/run.sh` prefers the venv.
+  calls `evdev.list_devices(writable=False)` (read-only access, matching
+  the `0440` udev rule) with a no-arg fallback for evdev 1.x, instead of
+  returning an empty list; an actionable warning dialog appears when no
+  devices are accessible.
+- **Arch-proof, PEP 668-safe installer**: `tools/install.sh` installs the
+  distro evdev/xlib/Tk packages, creates a project `.venv`
+  (`--system-site-packages`) so pip runs outside the externally-managed
+  system Python (PEP 668, never `--break-system-packages`), fails fast with
+  a logout notice, guards the real user under sudo, and smoke-tests the
+  app; `tools/run.sh` prefers the venv.
 - **Own virtual device excluded from listeners**: input listeners skip the
   app's `LinuxTask-Virtual` uinput device by name, stopping replay echo and
   hotkey re-triggering during playback.
