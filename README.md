@@ -2,9 +2,7 @@
 
 > 👤 More projects: [@JADRT22](https://github.com/JADRT22) — Hyprland automation • Roblox on Linux • MCP/agents
 
-**A minimalist macro recorder for Linux with hardware-level input capture — record and replay keyboard + mouse macros on Hyprland, GNOME Wayland, KDE Wayland and X11.**
-
-> 🎨 Using Hyprland? Also check **[WaybarDynamicTheme](https://github.com/JADRT22/WaybarDynamicTheme)** — wallpaper-based dynamic Waybar theming, same Hyprland audience.
+**A minimalist macro recorder for Linux — record and replay keyboard + mouse macros. Drivers exist for KDE Plasma Wayland, Hyprland, GNOME Wayland and X11 (see Status below).**
 
 [![Release](https://img.shields.io/github/v/release/JADRT22/LinuxTask?style=flat-square)](https://github.com/JADRT22/LinuxTask/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/JADRT22/LinuxTask/python-app.yml?style=flat-square&label=tests)](https://github.com/JADRT22/LinuxTask/actions/workflows/python-app.yml)
@@ -40,7 +38,18 @@ automation tools.
 - **Compact UI** — a 400×44 px toolbar built with CustomTkinter that stays out
   of the way.
 
-## Supported environments
+## Status
+
+This README describes v3.0.2 (`APP_VERSION` in `src/main.py`).
+
+| Driver | Support level |
+|---|---|
+| KDE Plasma Wayland | Tested by the author (CachyOS) |
+| Hyprland | Implemented, not tested by the author |
+| GNOME Wayland | Implemented, not tested by the author |
+| X11 desktops (Cinnamon, MATE, XFCE…) | Implemented, not tested by the author |
+
+Implemented capability matrix (only the KDE Plasma Wayland column is verified by the author):
 
 | | X11 desktops | GNOME Wayland | Hyprland | KDE Wayland |
 |---|---|---|---|---|
@@ -60,6 +69,20 @@ with a running X server fall back to the X11 driver.
 > UInput unavailable"`) and that input is skipped during replay — keyboard
 > and scroll do not silently fall back to anything else. The installer
 > configures `/dev/uinput` access (see Requirements).
+
+### Known limitations
+
+- **KDE Plasma Wayland** needs `python3-dbus` and `python3-gi` from your
+  distro repositories (they cannot be installed from PyPI).
+- On first run the XDG Portal shows an authorization dialog; the driver
+  waits up to 120 s for approval. If approval is denied or times out,
+  cursor control stays disabled for that session.
+- Screen resolution is read from `kscreen-doctor`, with `xrandr` as
+  fallback and 1920×1080 as a last resort.
+- Cursor position is read with `xdotool getmouselocation`, which needs
+  XWayland; without it the driver tracks its last known position.
+- When the portal session is not ready, cursor moves are currently
+  skipped without a visible warning.
 
 ## Copy-paste in 30s
 
@@ -214,11 +237,44 @@ Builds a reproducible AppImage on top of python-build-standalone.
 | Hotkeys do not fire | Verify the `input` group: `groups $USER` — re-login after being added |
 | Missing dependency dialog | Follow the printed instructions (`python-xlib` via pip; `python3-dbus`/`python3-gi` via your package manager) |
 
+## Uninstall
+
+No uninstall script yet (one is planned). To revert manually what
+`tools/install.sh` does:
+
+```bash
+# 1. Remove the udev rule and reload
+sudo rm /etc/udev/rules.d/99-linuxtask.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# 2. Remove the desktop entry
+rm ~/.local/share/applications/linuxtask.desktop
+update-desktop-database ~/.local/share/applications
+
+# 3. Remove yourself from the input group (optional)
+sudo gpasswd -d "$USER" input
+
+# 4. Remove the Python packages (only if nothing else needs them)
+pip3 uninstall -y customtkinter evdev python-xlib
+
+# 5. Optionally remove the distro packages the installer pulled in
+# (xdotool, python3-dbus/python-dbus, python3-gi/python-gobject, acl)
+# with your package manager, e.g.: sudo pacman -Rns xdotool
+```
+
+Note: the temporary ACLs on `/dev/uinput` and `/dev/input/event*`
+disappear on reboot (`/dev` is in-memory); removing the udev rule is
+what makes the change permanent. An uninstall script is planned.
+
 ## Contributing
 
 See [CONTRIBUTING.md](docs/CONTRIBUTING.md). Bug reports and driver fixes for
 other compositors are especially welcome — each driver is a single file under
 `src/drivers/` behind a small abstract interface.
+
+## AI assistance
+
+Parts of this project were written with AI assistance, under the author's direction.
 
 ## License
 
