@@ -11,51 +11,81 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 ## [Unreleased]
 
 ### Changed
-- README is now English-first: Portuguese survives only as a short footnote
+- **English-first README**: Portuguese survives only as a short footnote
   with a cross-link to the English guide.
-- Demo is now an animated GIF showing keyboard-only record/replay on
-  KDE Wayland instead of a static screenshot.
-- Quickstart heading uses the plain style, matching the rest of the docs.
-- Audit cleanup: the unfinished libei prototypes moved to `.quarantine/`
-  (out of the AppImage payload), the AppImage font patch targets the actual
-  toolbar font size, `requirements.txt` marks numpy/Pillow as add-on-only,
-  and the global `*.json` ignore is narrowed so config files stay visible.
-- Changelog rewritten in one house style (plain Keep a Changelog, no emoji)
-  from v3.0.1 down to v2.0.0, with the compare-link footer added and dead
-  links to the untagged v2.0.0/v2.2.0 removed.
-- Release script now drains `[Unreleased]` into the new version heading and
-  resets it, instead of leaving released notes on top as still pending; it
-  selects the base tag by version rather than commit distance, keeps the
-  footer links current, and `--dry-run` previews the entry that will actually
+- **Animated demo GIF**: shows keyboard-only record/replay on KDE Wayland
+  instead of a static screenshot.
+- **Quickstart heading style**: uses the plain style, matching the rest of
+  the docs.
+- **Prototypes quarantined**: the unfinished libei prototypes moved to
+  `.quarantine/`, out of the AppImage payload.
+- **Font patch retargeted**: the AppImage font patch targets the actual
+  toolbar font size instead of a stale pattern that never matched.
+- **Add-on-only dependencies**: `requirements.txt` marks numpy/Pillow as
+  add-on-only rather than app dependencies.
+- **Narrowed JSON ignore**: the global `*.json` ignore is narrowed so
+  config files stay visible.
+- **House-style rewrite**: changelog rewritten in one house style (plain
+  Keep a Changelog, no emoji) from v3.0.1 down to v2.0.0.
+- **Compare-link footer**: compare-link footer added, and dead links to
+  the untagged v2.0.0/v2.2.0 removed.
+- **Unreleased draining**: the release script now drains `[Unreleased]`
+  into the new version heading and resets it, instead of leaving released
+  notes on top as still pending.
+- **Version-based base tag**: the script selects the base tag by version
+  rather than commit distance, and keeps the footer links current.
+- **Faithful dry run**: `--dry-run` previews the entry that will actually
   be published instead of a generated draft.
 
 ### Fixed
-- Playback tallies per-event failures and reports a summary afterward, and a
-  malformed event timestamp now fails that event only instead of aborting
-  the whole macro.
-- Hyprland `get_cursor_pos()` returns `None` on read failure instead of
-  `(0, 0)`, so a transient `hyprctl` failure falls back to uinput instead of
-  jumping the cursor to the corner.
-- Audit bug fixes: the KDE portal driver uses the shared screen-size
-  attributes, a missing `hyprctl` no longer escapes playback, X11/GNOME
-  cursor reads return `None` on failure, Stop responds immediately via
-  sliced waits, event dedupe uses bounded eviction, a missing `ydotool` is
-  handled, shared recorder state is lock-guarded, portal and `xrandr`/`gdbus`
-  calls time out, the release script avoids shell invocation, and macro
-  save/load validates UTF-8 input.
+- **Per-event failure tally**: playback counts per-event failures and
+  reports a summary afterward, so a replay with skipped events is visible.
+- **Isolated bad timestamps**: a malformed event timestamp now fails that
+  event only instead of aborting the whole macro.
+- **Hyprland read fallback**: `get_cursor_pos()` returns `None` on read
+  failure instead of `(0, 0)`, so a transient `hyprctl` failure falls back
+  to uinput instead of jumping the cursor to the corner.
+- **Shared portal screen size**: the KDE portal driver uses the shared
+  screen-size attributes instead of private copies stuck at zero.
+- **Missing hyprctl contained**: a missing `hyprctl` no longer escapes
+  playback mid-macro via an unhandled `FileNotFoundError`.
+- **No corner jump on failure**: X11/GNOME cursor reads return `None` on
+  failure instead of `(0, 0)`, so a failed read aborts the move rather
+  than jumping to the corner.
+- **Immediate Stop response**: playback sleeps in slices that check the
+  stop flag, so Stop responds immediately instead of after the full gap.
+- **Bounded event dedupe**: event dedupe evicts partially through a deque
+  instead of clearing wholesale, closing the double-fire window in long
+  sessions.
+- **Missing ydotool handled**: the GNOME driver returns early when the
+  `ydotool` path is missing instead of raising `TypeError`.
+- **Lock-guarded recorder state**: shared recorder state is now guarded
+  by a lock across device threads and record/playback.
+- **Backend call timeouts**: the automated portal steps time out after 15s
+  instead of freezing the UI at startup (the `Start` call that waits for the
+  user to approve the dialog keeps its 120s), and `xrandr`/`gdbus` calls pass
+  a timeout like the other backends.
+- **No shell invocation**: the release script passes an argument list
+  with `shell=False`, closing tag-based shell injection.
+- **Validated macro I/O**: macro save/load uses UTF-8 encoding and
+  validates its input.
 
 ## [v3.0.1] - 2026-10-01
 
 ### Added
-- **Optional visual-trigger add-on** in `experimental/`: `image_click/` finds
-  an image on screen and clicks it (grim capture with a pure-numpy NCC
-  matcher) and `color_spin/` clicks in a loop until a target color appears,
-  with a stability guard against animated false positives and a compact GUI
-  with live log and start/stop buttons. Ships with an independent installer
-  (`experimental/install.sh`) that only adds numpy/Pillow, grim/slurp and
-  desktop shortcuts; the main install neither includes nor requires it.
-  Backed by reusable `src/vision.py` (template matching, `color_fraction`)
-  and `src/capture.py` (grim/slurp backend) helpers used only by the add-on.
+- **Image-click add-on**: `experimental/image_click/` finds an image on
+  screen and clicks it, using grim capture with a pure-numpy NCC matcher.
+- **Color-spin add-on**: `experimental/color_spin/` clicks in a loop until
+  a target color appears, with a stability guard against animated false
+  positives and a compact GUI with live log and start/stop buttons.
+- **Independent add-on installer**: `experimental/install.sh` adds only
+  numpy/Pillow, grim/slurp and desktop shortcuts; `--remove` cleans them
+  up, and the main install neither includes nor requires the add-on.
+- **Vision and capture helpers**: reusable `src/vision.py` (template
+  matching, `color_fraction`) and `src/capture.py` (grim/slurp backend)
+  used only by the add-on, so the app itself gains no new dependency.
+- **Add-on tests**: `tests/test_experimental_addons.py` covers the add-on
+  headless with fake backends; run manually, not in CI.
 
 ### Changed
 - **Compact toolbar**: window reduced from 420x50 to 400x44 with 32px buttons
@@ -210,17 +240,20 @@ same date as v2.4.0, and with no tag that date cannot be checked).
   Arch/CachyOS.
 
 ### Fixed
-- **Drift and corner-jump bugs**: strict coordinate clamping and
-  delta-based tracking added so the cursor no longer drifts or snaps to
-  the corner.
+- **Delta-based tracking**: cursor movement now uses delta-based tracking
+  so it no longer drifts.
+- **Strict coordinate clamping**: coordinates are strictly clamped so the
+  cursor no longer snaps to the corner.
 
 ## v2.0.0 - 2026-02-22
 
 ### Added
 - **Humanize mode**: playback adds ±2px jitter and 0-3% timing delays so
   macros mimic human input more closely.
-- **Settings UI overhaul**: "black screen" bug on Wayland/Hyprland fixed
-  and contrast improved across the settings window.
+- **Settings black-screen fix**: the "black screen" bug on Wayland/Hyprland
+  is fixed.
+- **Better settings-window contrast**: contrast improved across the
+  settings window.
 
 ### Changed
 - **Stable desktop shortcut**: shortcut icon pinned to `input-mouse` for
