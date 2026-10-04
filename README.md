@@ -1,8 +1,8 @@
-# LinuxTask — Hyprland Macro Recorder for Linux
+# LinuxTask — Macro Recorder for Linux
 
 > 👤 More projects: [@JADRT22](https://github.com/JADRT22) — Hyprland automation • Roblox on Linux • MCP/agents
 
-**A minimalist hyprland macro recorder linux with hardware-level input capture — record and replay keyboard + mouse macros on Hyprland, GNOME Wayland, KDE Wayland and X11.**
+**A minimalist macro recorder for Linux with hardware-level input capture — record and replay keyboard + mouse macros on Hyprland, GNOME Wayland, KDE Wayland and X11.**
 
 > 🎨 Using Hyprland? Also check **[WaybarDynamicTheme](https://github.com/JADRT22/WaybarDynamicTheme)** — wallpaper-based dynamic Waybar theming, same Hyprland audience.
 
@@ -61,13 +61,13 @@ with a running X server fall back to the X11 driver.
 > and scroll do not silently fall back to anything else. The installer
 > configures `/dev/uinput` access (see Requirements).
 
-## Copy-paste in 30s / Copie e rode em 30s
+## Copy-paste in 30s
 
 ```bash
 git clone https://github.com/JADRT22/LinuxTask.git && cd LinuxTask && ./tools/install.sh && ./tools/run.sh
 ```
 
-Record with **F8**, replay with **F9** — global hotkeys work in any window. Grave com **F8**, reproduza com **F9**.
+Record with **F8**, replay with **F9** — global hotkeys work in any window.
 
 > 🇧🇷 **Em Português:** LinuxTask é um gravador de macros para Linux — grava e reproduz teclado e mouse no Hyprland, GNOME Wayland, KDE Wayland e X11, com captura via `evdev` e reprodução por `uinput`/APIs do compositor. Instalação: `./tools/install.sh`, uso: `./tools/run.sh` (atalhos globais F8/F9).
 
@@ -183,10 +183,15 @@ python3 tools/release.py --bump minor [--dry-run]
 git push origin main --tags
 ```
 
-The script bumps `APP_VERSION` (mirrored to the AppImage project), prepends a
-changelog entry below the hand-written `[Unreleased]` section, commits and
-tags. Pushing a `v*` tag triggers the GitHub Actions workflow that publishes
-the release with the changelog entry as notes.
+The script bumps `APP_VERSION` (mirrored to the AppImage project), moves the
+hand-written `[Unreleased]` notes under the new version heading (or uses a
+generated draft from the commit list when `[Unreleased]` is empty), resets
+`[Unreleased]` to empty, and maintains the footer link refs (`[Unreleased]`
+retargeted to the new version, new `[vX]` ref inserted), commits and tags. Pushing a `v*` tag triggers the
+GitHub Actions workflow that publishes the release with the changelog entry
+as notes. `--dry-run` prints the exact `[vX.Y.Z]` section and footer link
+refs that would be written (including the drained `[Unreleased]` body)
+without touching any files.
 
 ### AppImage
 
