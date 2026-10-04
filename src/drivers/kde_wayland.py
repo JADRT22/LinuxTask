@@ -12,8 +12,9 @@ from .base import DesktopManager, FALLBACK_RESOLUTION
 
 logger = logging.getLogger(__name__)
 
-# evdev button code -> Portal button number.
-BTN_MAP = {BTN_LEFT: 1, BTN_RIGHT: 3, BTN_MIDDLE: 2}
+# evdev button code -> evdev button code: the RemoteDesktop portal spec
+# wants evdev codes (272/273/274), not X11 button numbers 1/2/3.
+BTN_MAP = {BTN_LEFT: 272, BTN_RIGHT: 273, BTN_MIDDLE: 274}
 
 
 class KdeWaylandDriver(DesktopManager):
