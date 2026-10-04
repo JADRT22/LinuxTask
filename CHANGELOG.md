@@ -10,6 +10,20 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Added
+- **Uninstall script**: `tools/uninstall.sh` mirrors the installer (udev rule,
+  desktop entry, optional `input` group removal, pip packages behind an explicit
+  purge flag) with a root `./uninstall.sh` wrapper; the README keeps the manual
+  procedure as a fallback.
+
+### Changed
+- **`main.py` split**: the 967-line `LinuxTaskApp` god object was reduced to
+  UI and wiring (~507 lines); device capture, deduplication and timeline
+  building moved to `src/recorder.py`, and replay, humanize jitter and macro
+  validation to `src/playback.py`. No behavior change.
+- **Wider CI**: the workflow now runs the X11, Hyprland and input-device
+  suites alongside the core three — 6 suites, 68 tests, all headless-safe.
+
 ## [v3.0.3] - 2026-10-04
 
 ### Added
