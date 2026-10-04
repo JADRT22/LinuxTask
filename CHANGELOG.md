@@ -20,6 +20,14 @@ same date as v2.4.0, and with no tag that date cannot be checked).
   (out of the AppImage payload), the AppImage font patch targets the actual
   toolbar font size, `requirements.txt` marks numpy/Pillow as add-on-only,
   and the global `*.json` ignore is narrowed so config files stay visible.
+- Changelog rewritten in one house style (plain Keep a Changelog, no emoji)
+  from v3.0.1 down to v2.0.0, with the compare-link footer added and dead
+  links to the untagged v2.0.0/v2.2.0 removed.
+- Release script now drains `[Unreleased]` into the new version heading and
+  resets it, instead of leaving released notes on top as still pending; it
+  selects the base tag by version rather than commit distance, keeps the
+  footer links current, and `--dry-run` previews the entry that will actually
+  be published instead of a generated draft.
 
 ### Fixed
 - Playback tallies per-event failures and reports a summary afterward, and a
