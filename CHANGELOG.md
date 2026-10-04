@@ -10,6 +10,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+## [v3.1.0] - 2026-10-04
+
 ### Added
 - **Uninstall script**: `tools/uninstall.sh` mirrors the installer (udev rule,
   desktop entry, optional `input` group removal, pip packages behind an explicit
@@ -307,7 +309,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 - **Movement-precision tests**: `test_jitter.py` added to cover movement
   precision with unit tests.
 
-[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.0.3...HEAD
+[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.1.0...HEAD
+[v3.1.0]: https://github.com/JADRT22/LinuxTask/compare/v3.0.3...v3.1.0
 [v3.0.3]: https://github.com/JADRT22/LinuxTask/compare/v3.0.2...v3.0.3
 [v3.0.2]: https://github.com/JADRT22/LinuxTask/compare/v3.0.1...v3.0.2
 [v3.0.1]: https://github.com/JADRT22/LinuxTask/compare/v3.0.0...v3.0.1
