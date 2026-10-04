@@ -10,6 +10,34 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Added
+- **First-recording password warning**: the app now warns before the first
+  recording that everything typed (including passwords) is captured, with
+  a "Don't show again" opt-out persisted to `~/.config/linuxtask/config.json`;
+  recording can be cancelled from the dialog, and stale hotkey actions are
+  drained while it is open.
+
+### Changed
+- **English-first installer**: `tools/install.sh` and `tools/run.sh`
+  messages standardized in English, and the README documents `tools/` as
+  the canonical install path.
+- **Honest status table**: the README lists KDE Plasma (Wayland) as tested
+  by the author and Hyprland/GNOME/X11 as implemented but untested, with
+  known limitations, manual uninstall steps, and an AI-assistance note.
+
+### Fixed
+- **Readable-only input devices on evdev 2.x**: device enumeration now
+  requests read-only access (matching the `0440` udev rule) with a fallback
+  for older evdev, instead of returning an empty list; an actionable warning
+  dialog appears when no devices are accessible.
+- **Arch-proof installer**: `tools/install.sh` installs the distro
+  evdev/xlib/Tk packages, creates a `.venv` with system site packages,
+  fails fast with a logout notice, guards the real user under sudo, and
+  smoke-tests the app; `tools/run.sh` prefers the venv.
+- **Own virtual device excluded from listeners**: input listeners skip the
+  app's `LinuxTask-Virtual` uinput device by name, stopping replay echo and
+  hotkey re-triggering during playback.
+
 ## [v3.0.2] - 2026-10-04
 
 ### Changed
