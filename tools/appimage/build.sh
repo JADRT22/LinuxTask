@@ -61,13 +61,23 @@ print("staged + patched OK")
 EOF
 
 echo "--- build tool (isolated env) ---"
-if ! python3 -c "import appimage" 2>/dev/null \
-    && ! "$STAGE/build-env/bin/python" -c "import appimage" 2>/dev/null; then
+BPY=""
+# Prefer a build-env that actually has the package (a half-aborted
+# build leaves an env without it); then system python3; then create.
+if [ -x "$STAGE/build-env/bin/python" ] \
+    && "$STAGE/build-env/bin/python" -c "import appimage" 2>/dev/null; then
+    BPY="$STAGE/build-env/bin/python"
+elif python3 -c "import appimage" 2>/dev/null; then
+    BPY="python3"
+else
+    if ! command -v uv >/dev/null 2>&1; then
+        echo "appimage package not found. pip install appimage, or install uv: https://docs.astral.sh/uv" >&2
+        exit 1
+    fi
     uv venv "$STAGE/build-env" >/dev/null
     uv pip install --python "$STAGE/build-env/bin/python" appimage >/dev/null
+    BPY="$STAGE/build-env/bin/python"
 fi
-BPY="$STAGE/build-env/bin/python"
-[ -x "$BPY" ] || BPY="python3"
 
 echo "--- building (downloads toolchain on first run) ---"
 (
