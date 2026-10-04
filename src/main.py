@@ -31,28 +31,21 @@ except ImportError:
     sys.exit(1)
 
 import time
-import random
 import threading
 import json
 import os
 import queue
 import tkinter
-import traceback
 from collections import deque
+# filedialog must stay bound in this module: tests patch('main.filedialog...').
 from tkinter import filedialog
 from drivers.factory import AutoDetectDriver
+# Capture/playback live in their own modules and are mixed in below, so the
+# public surface (LinuxTaskApp.<method>) is unchanged for callers and tests.
+from recorder import Recorder, VIRTUAL_DEVICE_NAME
+from playback import Playback
 
 APP_VERSION = "3.0.3"
-
-# Cap for the device_loop dedupe set: bounds memory in long sessions.
-# When exceeded, only the oldest entries are evicted (see device_loop)
-# instead of clearing the whole set, which would reopen double-fire.
-MAX_DEDUPE_IDS = 100000
-MAX_DEDUPE_EVICT = 10000
-
-# Name of our own virtual replay device (see init_uinput). Listeners skip
-# any device with this name so replayed events are not read back (echo).
-VIRTUAL_DEVICE_NAME = "LinuxTask-Virtual"
 
 CONFIG_DIR_NAME = "linuxtask"
 CONFIG_FILE_NAME = "config.json"
@@ -115,7 +108,7 @@ class ToolTip:
             self.tip = None
 
 
-class LinuxTaskApp(ctk.CTk):
+class LinuxTaskApp(ctk.CTk, Recorder, Playback):
     def __init__(self):
         super().__init__()
         try:
@@ -341,210 +334,6 @@ class LinuxTaskApp(ctk.CTk):
             fg_color="#1976d2" if self.loop_enabled else "#333333"
         )
 
-    def get_input_devices(self):
-        """Returns list of accessible input devices."""
-        # NOTE: python-evdev >= 2.0 only lists readable+WRITABLE devices
-        # by default, but our udev rule grants event* READ-ONLY on purpose
-        # (recording only listens). Ask for readable devices explicitly;
-        # fall back to the old no-arg call on evdev 1.x.
-        try:
-            paths = evdev.list_devices(writable=False)
-        except TypeError:
-            paths = evdev.list_devices()
-        # NOTE: __dict__ lookup (not getattr): same reason as in
-        # device_loop — on instances built via __new__ (unit tests, no
-        # display) getattr() on a missing attr raises RecursionError
-        # instead of returning the default. Verified empirically.
-        own = self.__dict__.get("uinput_device")
-        own_name = None
-        if own is not None:
-            try:
-                own_name = own.name
-            except (OSError, AttributeError):
-                own_name = None
-        devices = []
-        for path in paths:
-            try:
-                dev = evdev.InputDevice(path)
-            except (PermissionError, OSError) as exc:
-                logger.debug("Cannot open %s: %s", path, exc)
-                continue
-            # Skip our own virtual replay device: playback writes key and
-            # mouse events through it, and without this filter the listener
-            # threads would read those replayed events back (echo),
-            # re-triggering the F8/F9 hotkeys mid-playback. The match is by
-            # device NAME, so a second app instance would also ignore the
-            # first one's virtual device — acceptable, since each instance
-            # only replays through its own UInput.
-            try:
-                dev_name = dev.name
-            except (OSError, AttributeError):
-                dev_name = None
-            if (own_name is not None and dev_name is not None
-                    and dev_name == own_name == VIRTUAL_DEVICE_NAME):
-                logger.debug(
-                    "Skipping own virtual device '%s' (%s).", dev_name, path
-                )
-                continue
-            devices.append(dev)
-        return devices
-
-    def global_hardware_listener(self):
-        """Spawns a listener thread for each input device."""
-        devices = self.get_input_devices()
-        if not devices:
-            logger.warning(
-                "No input devices accessible. "
-                "Global hotkeys and recording will not work. "
-                "Fix: re-run ./tools/install.sh, check membership in "
-                "the 'input' group (groups $USER), then log out and back in."
-            )
-            self._ui_queue.put("no_devices")
-            return
-        self._input_devices = devices
-        logger.info("Listening on %d input devices.", len(devices))
-        for d in devices:
-            threading.Thread(
-                target=self.device_loop, args=(d,), daemon=True
-            ).start()
-
-    def _event_id(self, event):
-        return (event.sec, event.usec, event.type, event.code, event.value)
-
-    def device_loop(self, dev):
-        """Main event reading loop for a single input device."""
-        try:
-            for event in dev.read_loop():
-                # Deduplicate events across multiple devices
-                eid = self._event_id(event)
-                with self._processed_ids_lock:
-                    if eid in self._processed_ids:
-                        continue
-                    self._processed_ids.add(eid)
-                    # NOTE: __dict__ lookup (not getattr): this class is a
-                    # tkinter widget whose __getattr__ recurses on missing
-                    # attrs for instances built via __new__ in tests.
-                    order = self.__dict__.get("_processed_ids_order")
-                    if order is not None:
-                        order.append(eid)
-                    # Cap set size to prevent memory leak during long sessions.
-                    # Evict only the oldest IDs so recent events stay
-                    # deduplicated (a full clear would reopen double-fire).
-                    if len(self._processed_ids) > MAX_DEDUPE_IDS:
-                        if order is not None:
-                            for _ in range(min(len(order), MAX_DEDUPE_EVICT)):
-                                self._processed_ids.discard(order.popleft())
-                                if len(self._processed_ids) <= MAX_DEDUPE_IDS - MAX_DEDUPE_EVICT:
-                                    break
-                        else:
-                            self._processed_ids.clear()
-
-                # --- Mouse movement: record absolute or relative ---
-                if event.type == e.EV_REL and self.recording:
-                    if event.code == e.REL_WHEEL:
-                        # monotonic: immune to NTP adjustments/DST jumps.
-                        now = time.monotonic() - self.start_time
-                        direction = 'up' if event.value > 0 else 'down'
-                        with self.events_lock:
-                            self.events.append({
-                                "type": "scroll",
-                                "direction": direction,
-                                "clicks": abs(event.value),
-                                "time": now
-                            })
-                        continue
-                    if event.code == e.REL_X:
-                        with self.events_lock:
-                            self._rel_dx += event.value
-                            self._rel_dirty = True
-                    elif event.code == e.REL_Y:
-                        with self.events_lock:
-                            self._rel_dy += event.value
-                            self._rel_dirty = True
-                    else:
-                        with self.events_lock:
-                            self._rel_dirty = True
-
-                if event.type == e.EV_SYN and self.recording:
-                    with self.events_lock:
-                        rel_dx, rel_dy = self._rel_dx, self._rel_dy
-                        rel_dirty = self._rel_dirty
-                        self._rel_dirty = False
-                        self._rel_dx = 0
-                        self._rel_dy = 0
-                    if rel_dirty:
-                        now = time.monotonic() - self.start_time
-                        if self.manager.supports_absolute_positioning:
-                            pos = self.manager.get_cursor_pos()
-                            if pos is None:
-                                logger.debug("EV_SYN flush skipped: cursor pos unknown")
-                            else:
-                                with self.events_lock:
-                                    self.events.append({
-                                        "type": "pos", "x": pos[0],
-                                        "y": pos[1], "time": now
-                                    })
-                        else:
-                            with self.events_lock:
-                                self.events.append({
-                                    "type": "rel", "dx": rel_dx,
-                                    "dy": rel_dy, "time": now
-                                })
-
-                # --- Key / button events ---
-                if event.type == e.EV_KEY:
-                    if self.is_mapping and event.value == 1:
-                        if event.code == e.KEY_ESC:
-                            logger.info("Hotkey mapping cancelled.")
-                        else:
-                            if self.is_mapping == "rec":
-                                self.hotkey_rec = event.code
-                            else:
-                                self.hotkey_play = event.code
-                            logger.info("Hotkey remapped to %s", self.get_key_name(event.code))
-
-                        try:
-                            if self.is_mapping == "rec":
-                                self.lbl_rec.configure(text=f"Record: {self.get_key_name(self.hotkey_rec)}", fg_color=['#3B8ED0', '#1F6AA5'])
-                            else:
-                                self.lbl_play.configure(text=f"Play/Stop: {self.get_key_name(self.hotkey_play)}", fg_color=['#3B8ED0', '#1F6AA5'])
-                        except Exception as exc:
-                            logger.debug("Failed to update button text during mapping: %s", exc)
-
-                        self.is_mapping = None
-                        continue
-
-                    # Global hotkeys (on key press only).
-                    # NOTE: never touch tkinter here — this runs on an evdev
-                    # listener thread. Push to the queue; UI polls it.
-                    if event.value == 1:
-                        if event.code == self.hotkey_rec:
-                            self._ui_queue.put("rec")
-                        elif event.code == self.hotkey_play:
-                            self._ui_queue.put("play")
-
-                    with self.events_lock:
-                        if self.recording:
-                            if event.code not in [
-                                self.hotkey_rec, self.hotkey_play
-                            ]:
-                                self.events.append({
-                                    "type": "key", "code": event.code,
-                                    "val": event.value,
-                                    "time": time.monotonic() - self.start_time
-                                })
-
-        except OSError as exc:
-            logger.warning(
-                "Device '%s' disconnected or unavailable: %s",
-                dev.name, exc
-            )
-        except Exception as exc:
-            logger.error(
-                "Unexpected error on device '%s': %s",
-                dev.name, exc
-            )
-
     def _config_path(self):
         """Path of the persistent app config file.
 
@@ -652,7 +441,7 @@ class LinuxTaskApp(ctk.CTk):
         """Drop stale queued hotkey actions (they went obsolete)."""
         try:
             while True:
-                self._hotkey_actions.get_nowait()
+                self._ui_queue.get_nowait()
         except queue.Empty:
             pass
 
@@ -700,261 +489,12 @@ class LinuxTaskApp(ctk.CTk):
                 ev_count = len(self.events)
             logger.info("Recording stopped. %d events captured.", ev_count)
 
-    def handle_play_key(self):
-        """Handles play/stop hotkey press."""
-        if self.recording:
-            return
-        if self.playing:
-            self.playing = False
-        else:
-            self.start_playback()
-
-    def start_playback(self):
-        """Starts playback in a background thread."""
-        if self.playing:
-            return
-        with self.events_lock:
-            if not self.events:
-                logger.warning("Play pressed with no events recorded.")
-                return
-        self.playing = True
-        self.btn_play.configure(text="■", fg_color="#b71c1c")
-        threading.Thread(target=self.playback_thread, daemon=True).start()
-
-    def _apply_humanize(self, dx, dy, delay):
-        """Applies jitter to movement and timing if humanize is enabled."""
-        if not self.humanize_enabled.get():
-            return dx, dy, delay
-        jitter_x = random.randint(-2, 2)
-        jitter_y = random.randint(-2, 2)
-        time_variance = delay * random.uniform(0, 0.03)
-        return dx + jitter_x, dy + jitter_y, delay + time_variance
-
-    def playback_thread(self):
-        """Main playback loop, runs in a background thread."""
-        # Tally for the end-of-playback summary. Reset here (not in
-        # start_playback) so it is always owned by the running thread.
-        attempted_events = 0
-        failed_events = 0
-        try:
-            while self.playing:
-                if self.start_cursor_pos is not None:
-                    try:
-                        self.manager.move_cursor(*self.start_cursor_pos)
-                        time.sleep(0.01)
-                    except Exception as exc:
-                        logger.debug(
-                            "Could not reset cursor position: %s", exc
-                        )
-
-                start_p = time.monotonic()
-                try:
-                    speed = float(self.speed_var.get().replace("x", ""))
-                except (ValueError, AttributeError):
-                    speed = 1.0
-
-                with self.events_lock:
-                    events_copy = list(self.events)
-                logger.info(
-                    "Playback started: %d events at %sx.",
-                    len(events_copy), speed,
-                )
-                # Let the driver re-sync its tracked position once
-                # (drivers that need it implement sync_for_playback).
-                sync = getattr(self.manager, "sync_for_playback", None)
-                if callable(sync):
-                    try:
-                        sync()
-                    except Exception as exc:
-                        logger.debug("sync_for_playback failed: %s", exc)
-
-                for i, ev in enumerate(events_copy):
-                    if not self.playing:
-                        break
-
-                    # One bad event must not abort the whole macro: the timing
-                    # math reads ev['time'] too, so it belongs inside this try.
-                    attempted_events += 1
-                    try:
-                        target_time = start_p + (ev['time'] / speed)
-                        remaining = target_time - time.monotonic()
-                        if remaining > 0:
-                            # Sliced wait: Stop/F9 takes effect promptly
-                            # instead of only after the full gap elapses.
-                            deadline = time.monotonic() + remaining
-                            while self.playing:
-                                left = deadline - time.monotonic()
-                                if left <= 0:
-                                    break
-                                time.sleep(min(left, 0.05))
-
-                        if not self.playing:
-                            break
-
-                        if ev['type'] == "pos":
-                            self.manager.move_cursor(ev['x'], ev['y'])
-
-                        elif ev['type'] == "rel":
-                            dx, dy = ev['dx'], ev['dy']
-                            delay = 0
-                            if self.humanize_enabled.get() and i + 1 < len(events_copy):
-                                delay = (events_copy[i + 1]['time'] - ev['time']) / speed
-                                dx, dy, delay = self._apply_humanize(dx, dy, delay)
-
-                            handled = self.manager.move_relative(dx, dy)
-                            if not handled and self.uinput_device is not None:
-                                self.uinput_device.write(e.EV_REL, e.REL_X, dx)
-                                self.uinput_device.write(e.EV_REL, e.REL_Y, dy)
-                                self.uinput_device.syn()
-                            elif not handled:
-                                logger.warning(
-                                    "Relative move (%d, %d) dropped: driver "
-                                    "declined and UInput unavailable.", dx, dy
-                                )
-
-                        elif ev['type'] == "scroll":
-                            handled = self.manager.scroll(
-                                ev['direction'], ev.get('clicks', 1)
-                            )
-                            if not handled:
-                                if self.uinput_device is not None:
-                                    wheel = 1 if ev['direction'] == 'up' else -1
-                                    for _ in range(ev.get('clicks', 1)):
-                                        self.uinput_device.write(
-                                            e.EV_REL, e.REL_WHEEL, wheel
-                                        )
-                                    self.uinput_device.syn()
-                                else:
-                                    logger.warning(
-                                        "Scroll (%s x%d) dropped: driver "
-                                        "declined and UInput unavailable.",
-                                        ev['direction'], ev.get('clicks', 1)
-                                    )
-
-                        elif ev['type'] == "key":
-                            if ev['code'] in [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE]:
-                                handled = self.manager.mouse_button(ev['code'], ev['val'] == 1)
-                                if handled:
-                                    continue
-
-                            if self.uinput_device is not None:
-                                self.uinput_device.write(
-                                    e.EV_KEY, ev['code'], ev['val']
-                                )
-                                self.uinput_device.syn()
-                            else:
-                                if ev['val'] == 1:
-                                    logger.warning(
-                                        "UInput unavailable and driver could not handle "
-                                        "mouse button (code=%d)", ev['code']
-                                    )
-                    except Exception as exc:
-                        failed_events += 1
-                        logger.warning(
-                            "Playback event %d (%s) failed, skipping: %s",
-                            i, ev.get('type'), exc, exc_info=True
-                        )
-                        continue
-
-                if not self.loop_enabled:
-                    break
-
-            if failed_events > 0:
-                logger.warning(
-                    "Playback finished with %d failed events out of %d.",
-                    failed_events, attempted_events
-                )
-
-        except Exception as exc:
-            logger.error("Playback error: %s", exc)
-            logger.error(traceback.format_exc())
-        finally:
-            self.playing = False
-            # UI reset via queue (this runs on a worker thread).
-            self._ui_queue.put("play_finished")
-
     def get_key_name(self, code):
         """Returns human-readable key name from evdev code."""
         name = evdev.ecodes.KEY.get(code, str(code))
         if isinstance(name, list):
             name = name[0]
         return name
-
-    def save_file(self):
-        """Saves recorded events to a JSON file."""
-        f = filedialog.asksaveasfilename(
-            defaultextension=".json",
-            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
-        )
-        if f:
-            try:
-                with self.events_lock:
-                    events_copy = list(self.events)
-                macro_data = {
-                    "start_pos": self.start_cursor_pos,
-                    "events": events_copy
-                }
-                with open(f, 'w', encoding="utf-8") as fp:
-                    json.dump(macro_data, fp, indent=2)
-                logger.info("Macro saved to %s (%d events).", os.path.basename(f), len(events_copy))
-            except OSError as exc:
-                logger.error("Failed to save file: %s", exc)
-
-    def _validate_event(self, ev):
-        if not isinstance(ev, dict):
-            return False
-        # playback_thread reads ev['time'] for every event (src/main.py:581)
-        # before dispatching it, so a non-numeric 'time' there aborts the whole
-        # macro. A missing 'time' stays valid (legacy macros omit it) but is
-        # caught per-event by the try in playback_thread; only reject a
-        # 'time' that is present and not a real number.
-        if "time" in ev and (not isinstance(ev["time"], (int, float))
-                             or isinstance(ev["time"], bool)):
-            return False
-        ev_type = ev.get("type")
-        if ev_type == "pos":
-            return isinstance(ev.get("x"), (int, float)) and isinstance(ev.get("y"), (int, float))
-        elif ev_type == "rel":
-            return isinstance(ev.get("dx"), (int, float)) and isinstance(ev.get("dy"), (int, float))
-        elif ev_type == "scroll":
-            return ev.get("direction") in ("up", "down") and isinstance(ev.get("clicks", 1), int)
-        elif ev_type == "key":
-            return isinstance(ev.get("code"), int) and isinstance(ev.get("val"), int)
-        return False
-
-    def open_file(self):
-        """Loads recorded events from a JSON file."""
-        f = filedialog.askopenfilename(
-            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
-        )
-        if f:
-            try:
-                with open(f, 'r', encoding="utf-8") as fp:
-                    data = json.load(fp)
-                if isinstance(data, dict):
-                    raw_events = data.get("events", [])
-                    pos = data.get("start_pos")
-                    if (isinstance(pos, (list, tuple)) and len(pos) == 2
-                            and all(isinstance(v, (int, float))
-                                    and not isinstance(v, bool) for v in pos)):
-                        self.start_cursor_pos = tuple(pos)
-                else:
-                    raw_events = data
-                    self.start_cursor_pos = None
-                if not isinstance(raw_events, list):
-                    raise ValueError("events must be a list")
-                valid = [ev for ev in raw_events if self._validate_event(ev)]
-                if len(valid) != len(raw_events):
-                    logger.warning("Filtered %d invalid event(s) from macro.",
-                                   len(raw_events) - len(valid))
-                with self.events_lock:
-                    self.events = valid
-                logger.info(
-                    "Macro loaded from %s (%d events, start_pos=%s).",
-                    os.path.basename(f), len(valid), self.start_cursor_pos
-                )
-            except (OSError, json.JSONDecodeError, ValueError) as exc:
-                logger.error("Failed to load file: %s", exc)
 
 
 def main():
