@@ -9,7 +9,7 @@ description = "Minimalist Macro Recorder for Linux"
 requires-python = ">=3.10"
 dependencies = [
     "customtkinter",
-    "evdev",
+    "evdev==2.0.0",
     "python-xlib",
 ]
 

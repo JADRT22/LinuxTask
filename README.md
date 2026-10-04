@@ -125,7 +125,9 @@ graph TD
 ### Requirements
 
 - Python ≥ 3.10 with Tk
-- `evdev`, `customtkinter`, `python-xlib` (installed by the setup script)
+- `evdev`, `customtkinter`, `python-xlib` (installed by the setup script into
+  the project venv at the pinned versions; the distro `python3-evdev` is only
+  a fallback for the system Python)
 - **GNOME Wayland only**: a running `ydotoold` daemon
 - **KDE Wayland only**: `python3-dbus` and `python3-gi` from your distro
   repositories (they cannot be built from PyPI without C headers)

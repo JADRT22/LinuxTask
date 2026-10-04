@@ -1,4 +1,6 @@
-# Core pip dependencies
+# Core pip dependencies, pinned: installed into .venv by tools/install.sh and
+# into the AppImage. The distro's python3-evdev is only a fallback for the
+# system Python (it may be 1.x); CI tests these pins (evdev 2.0.0).
 customtkinter==6.0.0
 evdev==2.0.0
 python-xlib==0.33

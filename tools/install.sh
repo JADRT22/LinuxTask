@@ -83,11 +83,12 @@ install_dbus_python_deps() {
 echo "Starting LinuxTask installation..."
 
 # 0. Install Python dependencies (fail-fast: no silent fallbacks).
-# evdev + python-xlib come from the distro; customtkinter is NOT packaged
-# on Arch/CachyOS and distro Pythons here are externally managed (PEP 668
-# blocks `pip install --user`), so it goes into a project venv that still
-# sees distro packages (dbus, gi, evdev) via --system-site-packages.
-# Never --break-system-packages.
+# The distro packages installed below are the fallback for the system
+# Python; the project venv (--system-site-packages, so dbus/gi still
+# resolve) installs the pinned requirements.txt, shadowing the distro's
+# older evdev with 2.0.0 — the version CI tests. Distro Pythons here are
+# externally managed (PEP 668 blocks `pip install --user`), hence the
+# venv. Never --break-system-packages.
 echo "[INFO] Installing system packages (evdev, python-xlib, Tk)..."
 SYS_MGR=$(detect_pkg_manager)
 case "$SYS_MGR" in
@@ -105,8 +106,8 @@ if [ ! -x "$REPO_ROOT/.venv/bin/python" ]; then
         chown -R "$REAL_USER" "$REPO_ROOT/.venv" || fail "Could not fix .venv ownership."
     fi
 fi
-as_user "$REPO_ROOT/.venv/bin/pip" install customtkinter \
-    || fail "Could not install customtkinter into .venv."
+as_user "$REPO_ROOT/.venv/bin/pip" install -r "$REPO_ROOT/requirements.txt" \
+    || fail "Could not install pinned requirements (requirements.txt) into .venv."
 
 # 0.1 Distro-provided D-Bus bindings for the KDE Wayland driver.
 # Best-effort: not fatal on non-KDE desktops.
