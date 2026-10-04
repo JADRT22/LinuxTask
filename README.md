@@ -25,9 +25,10 @@ automation tools.
 - **Hardware-precision capture** — raw `evdev` event reading with
   deduplication across multiple input devices and `time.monotonic()`-based
   scheduling, immune to NTP and DST clock jumps.
-- **Full mouse support** — absolute and relative movement, button clicks and
+- **Mouse support** — absolute and relative movement, button clicks and
   scroll wheel, with automatic fallback to the virtual `uinput` device when a
-  compositor cannot handle an action.
+  compositor cannot handle an action. KDE Wayland clicks are the weak spot
+  (see Known limitations).
 - **Humanize mode** — optional ±2 px positional jitter and 0–3 % timing
   variance so replays do not look machine-perfect.
 - **Playback control** — 0.5×–10× speed, loop mode, stop-at-any-time.
@@ -54,7 +55,7 @@ Implemented capability matrix (the KDE Plasma Wayland and X11 columns are verifi
 | | X11 desktops | GNOME Wayland | Hyprland | KDE Wayland |
 |---|---|---|---|---|
 | **Driver** | `python-xlib` (XTest) | `ydotool` | `hyprctl` | XDG Portal (RemoteDesktop) |
-| Mouse click | ✅ | ✅ | ✅ (uinput) | ✅ |
+| Mouse click | ✅ | ✅ | ✅ (uinput) | ⚠️ (see limitations) |
 | Absolute move | ✅ | ❌ (emulated by deltas) | ✅ | ✅ (dead-reckoned, re-synced per playback) |
 | Relative move | ✅ | ✅ | ✅ | ✅ |
 | Scroll | ✅ | ✅ | ✅ (uinput) | ✅ |
@@ -81,6 +82,13 @@ with a running X server fall back to the X11 driver.
   fallback and 1920×1080 as a last resort.
 - Cursor position is read with `xdotool getmouselocation`, which needs
   XWayland; without it the driver tracks its last known position.
+- **KDE Plasma Wayland clicks** are the least reliable action: they travel
+  through the portal as evdev button codes (272/273/274) and portal versions
+  differ in how they deliver them. A click only goes through while the portal
+  session is approved and ready; otherwise the event is discarded (a WARNING
+  is logged once per reason and the app shows a one-time dialog), falling
+  back to `uinput` when it is available. Test clicks on your setup before
+  relying on them.
 - When the portal session is not ready or a portal mouse call fails, the
   driver logs a WARNING (once per reason) and the app shows a one-time
   dialog; the event falls back to `uinput` when available, otherwise it is
