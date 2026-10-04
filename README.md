@@ -243,8 +243,22 @@ Builds a reproducible AppImage on top of python-build-standalone.
 
 ## Uninstall
 
-No uninstall script yet (one is planned). To revert manually what
-`tools/install.sh` does:
+```bash
+./tools/uninstall.sh            # interactive (asks before leaving the input group)
+./tools/uninstall.sh --yes      # skip the prompts
+./tools/uninstall.sh --purge    # also force-remove shared pip packages
+```
+
+It is idempotent: re-running it is safe, and anything already gone is
+reported as a warning. It removes the udev rule (plus reload), the
+desktop entry, the `input` group membership, project-venv pip packages
+and the temporary device ACLs — then prints what it deliberately keeps
+(the project venv and the distro packages) with the command to remove
+those by hand.
+
+### Manual fallback
+
+To revert what `tools/install.sh` does by hand:
 
 ```bash
 # 1. Remove the udev rule and reload
@@ -268,7 +282,7 @@ pip3 uninstall -y customtkinter evdev python-xlib
 
 Note: the temporary ACLs on `/dev/uinput` and `/dev/input/event*`
 disappear on reboot (`/dev` is in-memory); removing the udev rule is
-what makes the change permanent. An uninstall script is planned.
+what makes the change permanent.
 
 ## Contributing
 
