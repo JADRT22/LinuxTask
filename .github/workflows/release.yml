@@ -22,13 +22,39 @@ jobs:
       - name: Generate Release Notes
         id: release_notes
         run: |
-          # Extract the most recent entry (up to the next version heading)
-          # from the root CHANGELOG.md, or fall back to git log.
+          # Extract the section for the pushed tag (up to but excluding
+          # the next version heading) from the root CHANGELOG.md, or
+          # fall back to git log. An awk exact-match is used on purpose:
+          # a sed range with one pattern restarts after it ends and
+          # prints every version section instead of just this one.
+          TAG="${GITHUB_REF_NAME}"
+          rm -f release_notes.md release_notes.tmp
           if [ -f CHANGELOG.md ]; then
-            sed -n '/^## \[[v0-9.]*\]/,/^## \[[v0-9.]*\]/p' CHANGELOG.md | sed '$d' > release_notes.md
+            awk -v tag="$TAG" '
+              /^## / {
+                if (found) exit
+                br = "## [" tag "]"
+                pl = "## " tag
+                if ($0 == br || index($0, br " ") == 1) { found = 1; print; next }
+                if ($0 == pl || index($0, pl " ") == 1 || index($0, pl "-") == 1) { found = 1; print; next }
+                next
+              }
+              found { print }
+            ' CHANGELOG.md > release_notes.md
+            # Never publish link-reference footer lines (e.g. "[v3.0.1]: https://...").
+            grep -vE '^\[[^]]+\]:[[:space:]]*https?://' release_notes.md > release_notes.tmp || true
+            mv release_notes.tmp release_notes.md
           fi
           if [ ! -s release_notes.md ]; then
-            git log --oneline -n 10 > release_notes.md
+            git log --oneline -n 10 | grep -vE '^\[[^]]+\]:[[:space:]]*https?://' > release_notes.md || true
+          fi
+          # Append a compare link from the previous tag; omit it when
+          # there is no previous tag instead of emitting a broken link.
+          if PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null) && [ -n "${PREV_TAG}" ]; then
+            {
+              echo ""
+              echo "**Full changelog**: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${TAG}"
+            } >> release_notes.md
           fi
 
       - name: Create GitHub Release
@@ -37,6 +63,6 @@ jobs:
           body_path: release_notes.md
           draft: false
           prerelease: false
-          generate_release_notes: true
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
