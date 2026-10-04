@@ -40,7 +40,7 @@ automation tools.
 
 ## Status
 
-This README describes v3.0.2 (`APP_VERSION` in `src/main.py`).
+This README describes v3.0.3 (`APP_VERSION` in `src/main.py`).
 
 | Driver | Support level |
 |---|---|
