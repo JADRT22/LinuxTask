@@ -16,6 +16,7 @@ from datetime import datetime
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAIN_PY_PATH = os.path.join(PROJECT_ROOT, 'src', 'main.py')
 PYPROJECT_PATH = os.path.join(PROJECT_ROOT, 'tools', 'appimage', 'pyproject.toml')
+README_PATH = os.path.join(PROJECT_ROOT, 'README.md')
 # Single canonical changelog at the repository root (docs/CHANGELOG.md was
 # merged into it and removed).
 CHANGELOG_PATH = os.path.join(PROJECT_ROOT, 'CHANGELOG.md')
@@ -102,6 +103,28 @@ def update_source_version(new_version):
             print(f"Updated {PYPROJECT_PATH} to version {new_version}")
         else:
             print(f"Warning: no version key found in {PYPROJECT_PATH}.")
+
+    # Mirror the version into the README's "Status" line; a missing
+    # pattern only warns (someone rewrote the README) so the release
+    # still goes through.
+    if os.path.exists(README_PATH):
+        with open(README_PATH, 'r') as f:
+            readme = f.read()
+        readme_re = re.compile(
+            r'^(This README describes )v[\d.]+(.*APP_VERSION.*)$',
+            re.MULTILINE
+        )
+        rm_new, n_rm = readme_re.subn(
+            lambda m: f"{m.group(1)}v{new_version}{m.group(2)}",
+            readme, count=1
+        )
+        if n_rm:
+            with open(README_PATH, 'w') as f:
+                f.write(rm_new)
+            print(f"Updated {README_PATH} to version {new_version}")
+        else:
+            print(f"Warning: version line not found in {README_PATH}; "
+                  "README left unchanged.")
 
 def _latest_tag_by_version():
     """Return the tag with the highest semantic version, or "" if none.
@@ -537,7 +560,8 @@ def main():
     
     # Phase 3: Git operations
     print("Staging changes...")
-    run_command(["git", "add", "src/main.py", "tools/appimage/pyproject.toml", "CHANGELOG.md"])
+    run_command(["git", "add", "src/main.py", "tools/appimage/pyproject.toml",
+                 "README.md", "CHANGELOG.md"])
     print(f"Committing release v{new_version}...")
     run_command(["git", "commit", "-m", f"chore: release v{new_version}"])
     print(f"Tagging release v{new_version}...")
