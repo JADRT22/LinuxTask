@@ -150,6 +150,7 @@ graph TD
 git clone https://github.com/JADRT22/LinuxTask.git
 cd LinuxTask
 ./tools/install.sh
+./tools/install.sh --yes      # unattended (CI): skip the sudo confirmation
 ```
 
 The canonical scripts live in `tools/` (`tools/install.sh`,

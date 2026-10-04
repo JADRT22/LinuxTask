@@ -80,6 +80,31 @@ install_dbus_python_deps() {
     esac
 }
 
+# --- Privilege confirmation -------------------------------------------
+# Every sudo below (system packages, udev rule, ACLs) runs after this gate.
+# --yes skips it for unattended installs; already-root (pkexec/sudo from
+# run.sh) needs no second prompt.
+ASSUME_YES=0
+for arg in "$@"; do
+    case "$arg" in
+        -y|--yes) ASSUME_YES=1 ;;
+        -h|--help)
+            echo "Usage: $0 [--yes]"
+            exit 0
+            ;;
+        *) fail "Unknown option: $arg (usage: $0 [--yes])" ;;
+    esac
+done
+if [ "$ASSUME_YES" -ne 1 ] && [ "$(id -u)" -ne 0 ]; then
+    echo "[WARN] The next steps run sudo (system packages, udev rule, ACLs)."
+    printf "Continue? [y/N] "
+    read -r reply || reply=""
+    case "$reply" in
+        y|Y|yes|YES) ;;
+        *) echo "[ABORT] Cancelled; nothing was changed." >&2; exit 1 ;;
+    esac
+fi
+
 echo "Starting LinuxTask installation..."
 
 # 0. Install Python dependencies (fail-fast: no silent fallbacks).
