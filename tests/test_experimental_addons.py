@@ -23,7 +23,7 @@ import numpy as np
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(TESTS_DIR)
 for p in (
-    os.path.join(REPO_ROOT, "src"),
+    os.path.join(REPO_ROOT, "experimental"),
     os.path.join(REPO_ROOT, "experimental", "color_spin"),
     os.path.join(REPO_ROOT, "experimental", "image_click"),
 ):
@@ -61,8 +61,8 @@ class FakeBackend(capture_mod.GrimCapture):
 
 
 class TestSharedPrimitives(unittest.TestCase):
-    """src/vision and src/capture are the single source of truth; the
-    experimental scripts must expose the same behaviour."""
+    """experimental/vision and experimental/capture are the single source
+    of truth; the experimental scripts must expose the same behaviour."""
 
     def test_color_fraction_matches_between_modules(self):
         img = _solid((60, 60, 60))

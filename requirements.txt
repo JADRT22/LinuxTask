@@ -1,6 +1,6 @@
 # Core pip dependencies
 customtkinter==6.0.0
-evdev==1.9.3
+evdev==2.0.0
 python-xlib==0.33
 
 # NOT pip-installable on most systems (need C headers + libs).
@@ -11,8 +11,8 @@ python-xlib==0.33
 # Required only for KDE Wayland (Portal RemoteDesktop driver).
 
 # Optional, NOT listed above on purpose: numpy + Pillow are imported only by
-# src/capture.py and src/vision.py, which no productive code path uses — their
-# only consumers are the experimental visual-trigger add-ons in
-# experimental/* (plus tests/test_experimental_addons.py, not run in CI).
+# experimental/capture.py and experimental/vision.py, which no productive code
+# path uses — their only consumers are the experimental visual-trigger add-ons
+# in experimental/* (plus tests/test_experimental_addons.py, not run in CI).
 # Those add-ons install numpy/Pillow themselves via experimental/install.sh,
 # so the main app and AppImage stay dependency-light. Do not add them here.

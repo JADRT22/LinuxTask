@@ -75,7 +75,7 @@ calibrar `--tolerance` e `--threshold`.
 - **Espera de estabilização**: validada com backends sintéticos
   (animação → estabiliza antes de checar; região que nunca para →
   desiste após `--stable-max` e checa mesmo assim).
-- **`capture_region`** (`src/capture.py`): validada (grim -g).
+- **`capture_region`** (`experimental/capture.py`): validada (grim -g).
 - **Loop completo com jogo**: não testado — precisa do Roblox rodando
   (via Sober/Wine); os parâmetros são calibráveis a frio.
 

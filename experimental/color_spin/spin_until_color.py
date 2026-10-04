@@ -35,10 +35,12 @@ import time
 
 import numpy as np
 
-# Roda de qualquer CWD: resolve src/ (drivers, capture) e o PoC irmão
-# image_click/ (UInputClicker) pelo local deste arquivo.
+# Roda de qualquer CWD: resolve src/ (drivers), capture/vision (pasta
+# experimental) e o PoC irmão image_click/ (UInputClicker) pelo local
+# deste arquivo.
 _HERE = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(_HERE, "..", "..", "src"))
+sys.path.insert(0, os.path.join(_HERE, ".."))  # capture/vision (mesma pasta)
 sys.path.insert(0, os.path.join(_HERE, "..", "image_click"))
 
 logger = logging.getLogger("LinuxTask.experimental.spin")

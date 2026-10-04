@@ -33,6 +33,7 @@ import time
 
 _HERE = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(_HERE, "..", "..", "src"))
+sys.path.insert(0, os.path.join(_HERE, ".."))  # capture/vision (mesma pasta)
 sys.path.insert(0, os.path.join(_HERE, "..", "image_click"))
 
 import customtkinter as ctk  # noqa: E402
