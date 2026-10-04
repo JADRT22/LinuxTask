@@ -40,16 +40,16 @@ automation tools.
 
 ## Status
 
-This README describes v3.0.3 (`APP_VERSION` in `src/main.py`).
+This README describes v3.1.0 (`APP_VERSION` in `src/main.py`).
 
 | Driver | Support level |
 |---|---|
 | KDE Plasma Wayland | Tested by the author (CachyOS) |
 | Hyprland | Implemented, not tested by the author |
 | GNOME Wayland | Implemented, not tested by the author |
-| X11 desktops (Cinnamon, MATE, XFCE…) | Implemented, not tested by the author |
+| X11 desktops (Cinnamon, MATE, XFCE…) | Tested by the author (KDE Plasma, X11 session) |
 
-Implemented capability matrix (only the KDE Plasma Wayland column is verified by the author):
+Implemented capability matrix (the KDE Plasma Wayland and X11 columns are verified by the author):
 
 | | X11 desktops | GNOME Wayland | Hyprland | KDE Wayland |
 |---|---|---|---|---|
@@ -248,6 +248,8 @@ Builds a reproducible AppImage on top of python-build-standalone.
 ./tools/uninstall.sh --yes      # skip the prompts
 ./tools/uninstall.sh --purge    # also force-remove shared pip packages
 ```
+
+The root `./uninstall.sh` is a thin wrapper that forwards to `./tools/uninstall.sh` with the same flags (like `install.sh`/`run.sh`).
 
 It is idempotent: re-running it is safe, and anything already gone is
 reported as a warning. It removes the udev rule (plus reload), the

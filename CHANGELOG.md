@@ -10,6 +10,25 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Changed
+- **`evdev` pin matches reality**: `requirements.txt` now pins `evdev==2.0.0`
+  (the version the venv and real installs use), so CI stops testing a
+  combination nobody runs.
+- **Vision/capture helpers moved out of `src/`**: `vision.py` and `capture.py`
+  now live in `experimental/` with the add-ons that use them, keeping them out
+  of the main package and the AppImage.
+- **X11 driver verified**: record/replay tested by the author on a KDE Plasma
+  X11 session; the README status table and capability matrix now mark the X11
+  column as tested.
+- **AppImage build guard**: `tools/appimage/build.sh` accepts an existing
+  build environment with `appimage` installed instead of demanding `uv`,
+  which is no longer on the PATH.
+
+### Fixed
+- **No more orphan `ydotoold` in tests**: `tests/test_coordinate_precision.py`
+  mocks the daemon instead of spawning it — no 3 s wait, no leaked subprocess,
+  the suite runs in under a second.
+
 ## [v3.1.0] - 2026-10-04
 
 ### Added
