@@ -42,7 +42,7 @@ from collections import deque
 from tkinter import filedialog
 from drivers.factory import AutoDetectDriver
 
-APP_VERSION = "3.0.2"
+APP_VERSION = "3.0.3"
 
 # Cap for the device_loop dedupe set: bounds memory in long sessions.
 # When exceeded, only the oldest entries are evicted (see device_loop)
