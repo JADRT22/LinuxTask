@@ -117,6 +117,10 @@ cd LinuxTask
 ./tools/install.sh
 ```
 
+The canonical scripts live in `tools/` (`tools/install.sh`,
+`tools/run.sh`); the root `install.sh`/`run.sh` are thin wrappers
+that forward to them.
+
 The installer works with `apt`, `pacman` and `dnf`, installs the Python
 dependencies, writes the `udev` rules, grants immediate ACL access (no
 logout needed in most cases) and creates a desktop entry.

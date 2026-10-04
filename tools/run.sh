@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Script de Execução e Autoconfiguração do LinuxTask
+# LinuxTask run and self-setup script
 
 # Resolve the real directory of the script (even if symlinked)
 APP_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -24,8 +24,8 @@ CAN_WRITE_UINPUT="no"
 if [ "$CAN_READ_EVENTS" != "yes" ] || [ "$CAN_WRITE_UINPUT" != "yes" ]; then
     # Graphical notification if zenity is available
     if command -v zenity >/dev/null; then
-        zenity --info --title="Configuração do Sistema" \
-            --text="O LinuxTask precisa de permissões de hardware.\n\nPor favor, insira sua senha para configurar o acesso imediato." \
+        zenity --info --title="System Setup" \
+            --text="LinuxTask needs hardware permissions.\n\nPlease enter your password to grant immediate access." \
             --width=350
     fi
 

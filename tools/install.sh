@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Script de Instalação do LinuxTask
+# LinuxTask installation script
 # Compatible with: apt (Debian/Ubuntu/Mint), pacman (Arch), dnf (Fedora)
 
 set -euo pipefail
@@ -63,7 +63,7 @@ install_dbus_python_deps() {
     esac
 }
 
-echo "🚀 Iniciando instalação do LinuxTask..."
+echo "Starting LinuxTask installation..."
 
 # 0. Install Python dependencies
 echo "[INFO] Installing Python dependencies..."
@@ -156,6 +156,6 @@ if command -v setfacl >/dev/null 2>&1; then
     done
 fi
 
-echo "✅ Instalação concluída!"
-echo "Agora você pode pesquisar 'LinuxTask' no seu menu de aplicativos."
-echo "Nota: Pode ser necessário fazer logout e login novamente para as permissões de grupo surtirem efeito."
+echo "Installation complete!"
+echo "You can now find 'LinuxTask' in your application menu."
+echo "Note: You may need to log out and back in for group permissions to take effect."
