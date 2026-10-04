@@ -61,7 +61,8 @@ print("staged + patched OK")
 EOF
 
 echo "--- build tool (isolated env) ---"
-if ! python3 -c "import appimage" 2>/dev/null; then
+if ! python3 -c "import appimage" 2>/dev/null \
+    && ! "$STAGE/build-env/bin/python" -c "import appimage" 2>/dev/null; then
     uv venv "$STAGE/build-env" >/dev/null
     uv pip install --python "$STAGE/build-env/bin/python" appimage >/dev/null
 fi
