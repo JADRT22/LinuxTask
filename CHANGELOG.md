@@ -10,6 +10,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+## [v3.0.2] - 2026-10-04
+
 ### Changed
 - **English-first README**: Portuguese survives only as a short footnote
   with a cross-link to the English guide.
@@ -261,7 +263,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 - **Movement-precision tests**: `test_jitter.py` added to cover movement
   precision with unit tests.
 
-[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.0.1...HEAD
+[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.0.2...HEAD
+[v3.0.2]: https://github.com/JADRT22/LinuxTask/compare/v3.0.1...v3.0.2
 [v3.0.1]: https://github.com/JADRT22/LinuxTask/compare/v3.0.0...v3.0.1
 [v3.0.0]: https://github.com/JADRT22/LinuxTask/compare/v2.6.0...v3.0.0
 [v2.6.0]: https://github.com/JADRT22/LinuxTask/compare/v2.4.0...v2.6.0
