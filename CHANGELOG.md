@@ -10,6 +10,30 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Added
+- **Installer confirms before sudo**: `tools/install.sh` asks for
+  confirmation before escalating and accepts `--yes` to skip the prompt
+  for unattended installs.
+
+### Fixed
+- **KDE Wayland buttons reach the portal as real mouse buttons**: clicks,
+  right-clicks and middle-clicks are translated to the evdev codes the
+  RemoteDesktop portal expects (272/273/274) instead of X11 button
+  numbers 1/2/3, which portal versions ignored or misread.
+- **A dead portal is reported instead of silently swallowing input**: when
+  the portal session fails to start or a portal call fails, the driver
+  raises a one-time warning in the UI (repeats stay in the log) and the
+  event falls back to `uinput`, instead of dropping it with no signal.
+- **KDE Wayland cursor position is read from the compositor, not from
+  frozen `xdotool`**: `xdotool getmouselocation` only tracks the pointer
+  over XWayland surfaces, so on a Wayland desktop it froze on one stale
+  coordinate and every recorded macro carried the same position — replays
+  then clicked wherever the pointer happened to be. The driver now reads
+  the true position from KWin's scripting D-Bus API (`workspace.cursorPos`,
+  the `kdotool` mechanism, ~7 ms per read), falls back to `xdotool` and
+  then to the last known position, and warns once if KWin is unavailable
+  so a stale-coordinate macro can never be recorded silently again.
+
 ## [v3.1.1] - 2026-10-04
 
 ### Changed
