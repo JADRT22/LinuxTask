@@ -27,8 +27,8 @@ automation tools.
   scheduling, immune to NTP and DST clock jumps.
 - **Mouse support** — absolute and relative movement, button clicks and
   scroll wheel, with automatic fallback to the virtual `uinput` device when a
-  compositor cannot handle an action. KDE Wayland clicks are the weak spot
-  (see Known limitations).
+  compositor cannot handle an action. KDE Plasma Wayland is fully
+  supported — record, replay and clicks verified by the author.
 - **Humanize mode** — optional ±2 px positional jitter and 0–3 % timing
   variance so replays do not look machine-perfect.
 - **Playback control** — 0.5×–10× speed, loop mode, stop-at-any-time.
@@ -45,7 +45,7 @@ This README describes v3.1.1 (`APP_VERSION` in `src/main.py`).
 
 | Driver | Support level |
 |---|---|
-| KDE Plasma Wayland | Tested by the author (CachyOS) |
+| KDE Plasma Wayland | **100% — fully tested by the author (CachyOS): record, replay and clicks** |
 | Hyprland | Implemented, not tested by the author |
 | GNOME Wayland | Implemented, not tested by the author |
 | X11 desktops (Cinnamon, MATE, XFCE…) | Tested by the author (KDE Plasma, X11 session) |
@@ -55,8 +55,8 @@ Implemented capability matrix (the KDE Plasma Wayland and X11 columns are verifi
 | | X11 desktops | GNOME Wayland | Hyprland | KDE Wayland |
 |---|---|---|---|---|
 | **Driver** | `python-xlib` (XTest) | `ydotool` | `hyprctl` | XDG Portal (RemoteDesktop) |
-| Mouse click | ✅ | ✅ | ✅ (uinput) | ⚠️ (see limitations) |
-| Absolute move | ✅ | ❌ (emulated by deltas) | ✅ | ✅ (dead-reckoned, re-synced per playback) |
+| Mouse click | ✅ | ✅ | ✅ (uinput) | ✅ (evdev button codes via the portal) |
+| Absolute move | ✅ | ❌ (emulated by deltas) | ✅ | ✅ (true position read from KWin, exact) |
 | Relative move | ✅ | ✅ | ✅ | ✅ |
 | Scroll | ✅ | ✅ | ✅ (uinput) | ✅ |
 | Keyboard | ✅ (uinput) | ✅ (uinput) | ✅ (uinput) | ✅ |
@@ -80,15 +80,11 @@ with a running X server fall back to the X11 driver.
   cursor control stays disabled for that session.
 - Screen resolution is read from `kscreen-doctor`, with `xrandr` as
   fallback and 1920×1080 as a last resort.
-- Cursor position is read with `xdotool getmouselocation`, which needs
-  XWayland; without it the driver tracks its last known position.
-- **KDE Plasma Wayland clicks** are the least reliable action: they travel
-  through the portal as evdev button codes (272/273/274) and portal versions
-  differ in how they deliver them. A click only goes through while the portal
-  session is approved and ready; otherwise the event is discarded (a WARNING
-  is logged once per reason and the app shows a one-time dialog), falling
-  back to `uinput` when it is available. Test clicks on your setup before
-  relying on them.
+- Cursor position is read from the compositor itself (KWin's scripting
+  D-Bus API, `workspace.cursorPos`) and falls back to `xdotool
+  getmouselocation`, which only works over XWayland surfaces; if both
+  fail the driver keeps its last known position and shows a one-time
+  warning instead of silently recording stale coordinates.
 - When the portal session is not ready or a portal mouse call fails, the
   driver logs a WARNING (once per reason) and the app shows a one-time
   dialog; the event falls back to `uinput` when available, otherwise it is
