@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=LinuxTask
 Comment=Minimalist Macro Recorder for Linux
-Exec=linuxtask
+Exec=AppRun
 Icon=LinuxTask
 Type=Application
 Categories=Utility;
