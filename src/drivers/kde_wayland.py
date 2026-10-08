@@ -1,8 +1,12 @@
 import subprocess
 import time
 import logging
+import atexit
+import os
+import tempfile
 import dbus
 import dbus.mainloop.glib
+import dbus.service
 from gi.repository import GLib
 import threading
 import re
@@ -15,6 +19,62 @@ logger = logging.getLogger(__name__)
 # evdev button code -> evdev button code: the RemoteDesktop portal spec
 # wants evdev codes (272/273/274), not X11 button numbers 1/2/3.
 BTN_MAP = {BTN_LEFT: 272, BTN_RIGHT: 273, BTN_MIDDLE: 274}
+
+# KWin cursor read (kdotool mechanism): a one-shot KWin script reports
+# workspace.cursorPos back to our private bus name. xdotool is frozen
+# on KDE Wayland (XWayland only tracks the pointer over X surfaces),
+# so this is the primary position source.
+_KWIN_PROBE_NAME = 'org.linuxtask.cursorprobe'
+_KWIN_SCRIPT_NAME = 'linuxtask_cursor_pos'
+_KWIN_SCRIPT = (
+    'var p = workspace.cursorPos;\n'
+    'callDBus("%s", "/", "%s", "result", p.x+","+p.y);\n'
+    % (_KWIN_PROBE_NAME, _KWIN_PROBE_NAME)
+)
+
+# Degrade after repeated read failures: KWin's replies never arriving
+# (e.g. the GLib dispatch loop stopped) would stall every read for the
+# full 2 s wait. After this many consecutive failures, skip KWin for
+# _KWIN_SKIP_READS reads, then probe once; a success resets the streak.
+_KWIN_FAIL_SKIP_AFTER = 3
+_KWIN_SKIP_READS = 8
+
+
+class _KwinCursorProbe(dbus.service.Object):
+    """Receives the position KWin's script sends back via callDBus.
+
+    Created AFTER the driver's GLib loop is running so incoming calls
+    get dispatched. Each read resets the event/value buffer; reads are
+    serialized by the driver's lock (one in-flight read at a time).
+    """
+
+    def __init__(self, bus):
+        self._event = threading.Event()
+        self._value = None
+        super().__init__(conn=bus, object_path='/')
+
+    @dbus.service.method(_KWIN_PROBE_NAME, in_signature='s',
+                         out_signature='')
+    def result(self, payload):
+        self._value = str(payload)
+        self._event.set()
+
+    def reset(self):
+        # ponytail: stale-reply window — if a read times out and KWin's
+        # callDBus reply lands right after, the NEXT read could parse
+        # that late reply instead of its own. Benign today: the payload
+        # is still real compositor truth from a run that did execute
+        # (at most a position from a few ms earlier). Upgrade path if it
+        # ever matters: tag the payload with a per-read sequence number
+        # and ignore mismatches.
+        self._value = None
+        self._event.clear()
+
+    def wait(self, timeout):
+        return self._event.wait(timeout)
+
+    def payload(self):
+        return self._value
 
 
 class KdeWaylandDriver(DesktopManager):
@@ -29,6 +89,18 @@ class KdeWaylandDriver(DesktopManager):
         self._portal_ready = False
         self._dbus_loop = None
         self._bus = None
+        # KWin cursor-read plumbing (lazily built in _kwin_read_setup,
+        # after _portal_init has started the GLib loop below).
+        self._kwin_ready = False
+        self._kwin_lock = threading.Lock()
+        self._kwin_probe = None
+        self._kwin_scripting = None
+        self._kwin_script_path = None
+        self._kwin_atexit_registered = False
+        self._kwin_last_error = None
+        # Consecutive read failures / reads skipped by the degrade rule.
+        self._kwin_fail_count = 0
+        self._kwin_skip_count = 0
         # Optional UI hook: main injects it so a skipped event becomes a
         # visible notice instead of log-only silence.
         self.warn_fn = None
@@ -216,7 +288,9 @@ class KdeWaylandDriver(DesktopManager):
             if self.warn_fn:
                 self.warn_fn(msg % args)
 
-    def get_cursor_pos(self):
+    def _xdotool_pos(self):
+        """Read position via xdotool (XWayland-only truth, can be frozen
+        on Wayland sessions). Returns (x, y) or None; never raises."""
         try:
             out = subprocess.check_output(
                 ['xdotool', 'getmouselocation'],
@@ -226,6 +300,212 @@ class KdeWaylandDriver(DesktopManager):
             return int(parts['x']), int(parts['y'])
         except Exception as exc:
             logger.debug("xdotool getmouselocation failed: %s", exc)
+            return None
+
+    def _kwin_read_setup(self):
+        """One-time plumbing for the KWin cursor read. True on success.
+
+        Must run only after _portal_init has started the GLib loop, so
+        the probe object's incoming callDBus actually gets dispatched.
+        Idempotent and retryable: each stage is guarded so a partial
+        failure leaves no half-built state and a later attempt reuses
+        what already exists instead of re-registering anything.
+        """
+        if self._kwin_ready:
+            return True
+        if self._bus is None or self._dbus_loop is None:
+            return False
+        # Probe: create once, reuse on later attempts.
+        if self._kwin_probe is None:
+            # DO_NOT_QUEUE + reply check: if another process owns the
+            # name (second instance, stale owner) a plain request_name
+            # would silently queue and every read would stall for the
+            # full 2 s timeout. Fail fast to the fallback instead.
+            try:
+                reply = self._bus.request_name(
+                    _KWIN_PROBE_NAME,
+                    flags=dbus.bus.NAME_FLAG_DO_NOT_QUEUE)
+            except Exception as exc:
+                logger.debug("KWin probe name request failed: %s", exc)
+                return False
+            if reply not in (dbus.bus.REQUEST_NAME_REPLY_PRIMARY_OWNER,
+                             dbus.bus.REQUEST_NAME_REPLY_ALREADY_OWNER):
+                logger.debug(
+                    "KWin probe name owned elsewhere (reply %r); "
+                    "not queueing.", reply)
+                return False
+            try:
+                self._kwin_probe = _KwinCursorProbe(self._bus)
+            except Exception as exc:
+                logger.debug("KWin probe setup failed: %s", exc)
+                return False
+        # Register before the temp stage: a write failure below returns
+        # False, so the path recorded there must already have an owner
+        # for the case where its own unlink fails.
+        if not self._kwin_atexit_registered:
+            atexit.register(self._kwin_cleanup)
+            self._kwin_atexit_registered = True
+        # Temp script: create once; harmless to keep across retries.
+        if self._kwin_script_path is None:
+            fd = None
+            path = None
+            try:
+                fd, path = tempfile.mkstemp(
+                    suffix='.js', prefix='linuxtask_cursor_')
+                # Record before writing: the write stage is retried on
+                # every read, so a failure here (ENOSPC on tmpfs) must
+                # not leave an untracked file behind per attempt.
+                self._kwin_script_path = path
+                f = os.fdopen(fd, 'w')
+                fd = None  # f owns the fd now; the with closes it
+                with f:
+                    f.write(_KWIN_SCRIPT)
+            except Exception as exc:
+                logger.debug("KWin script temp file failed: %s", exc)
+                if fd is not None:  # fdopen failed: fd never closed
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+                if path is not None:
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass  # still recorded; atexit retries at exit
+                    else:
+                        self._kwin_script_path = None
+                return False
+        try:
+            kwin = self._bus.get_object('org.kde.KWin', '/Scripting')
+            self._kwin_scripting = dbus.Interface(
+                kwin, 'org.kde.kwin.Scripting')
+        except Exception as exc:
+            logger.debug("KWin Scripting interface failed: %s", exc)
+            return False
+        self._kwin_ready = True
+        return True
+
+    def _kwin_cleanup(self):
+        """atexit: remove the script we loaded and the temp file we
+        created. Best-effort; deletes nothing we did not create."""
+        try:
+            if self._kwin_scripting is not None:
+                self._kwin_scripting.unloadScript(_KWIN_SCRIPT_NAME)
+        except Exception:
+            logger.debug("unloadScript at exit failed", exc_info=True)
+        try:
+            if self._kwin_script_path:
+                os.unlink(self._kwin_script_path)
+        except OSError:
+            pass
+
+    def _kwin_pos_warned(self):
+        """_kwin_cursor_pos plus a one-time user-visible warning when it
+        fails: a silent fall-through to frozen xdotool would bring the
+        original bug back invisibly. Repeats stay DEBUG (_warn_once)."""
+        pos = self._kwin_cursor_pos()
+        if pos is None:
+            self._warn_once(
+                "kwin_read",
+                "KWin cursor read failed; falling back to xdotool "
+                "(may be frozen on Wayland): %s",
+                self._kwin_last_error or 'unknown')
+        return pos
+
+    def _kwin_cursor_pos(self):
+        """Read the true compositor pointer position from KWin's
+        scripting API (same mechanism as kdotool). Returns (x, y) or
+        None on any failure; never raises. ~6 ms per read.
+
+        Strategy: load the script per read and ALWAYS unload it in the
+        finally block, so a read can never leak a KWin script entry and
+        two sequential reads can never collide on the script name.
+        loadScript uses signature='ss' — the 1-arg overload cannot be
+        unloaded by name.
+        """
+        # Setup rides inside the lock: two concurrent first reads must
+        # not race probe registration.
+        with self._kwin_lock:
+            # Degrade rule: after _KWIN_FAIL_SKIP_AFTER consecutive
+            # failures, skip KWin for _KWIN_SKIP_READS reads (one failed
+            # probe after the window restarts the window) so a dead KWin
+            # cannot stall every read for the full 2 s timeout. A
+            # success resets the streak and re-enables KWin at once.
+            if (self._kwin_fail_count >= _KWIN_FAIL_SKIP_AFTER
+                    and self._kwin_skip_count < _KWIN_SKIP_READS):
+                self._kwin_skip_count += 1
+                self._kwin_last_error = 'kwin skipped (repeated failures)'
+                return None
+            # Skip window over (or fresh streak): this is a real
+            # attempt, so the next failure restarts the window.
+            self._kwin_skip_count = 0
+            try:
+                if not self._kwin_read_setup():
+                    self._kwin_last_error = 'setup failed'
+                    self._kwin_fail_count += 1
+                    return None
+            except Exception:
+                self._kwin_last_error = 'setup crashed'
+                logger.debug("KWin read setup crashed", exc_info=True)
+                self._kwin_fail_count += 1
+                return None
+            try:
+                sid = self._kwin_scripting.loadScript(
+                    self._kwin_script_path, _KWIN_SCRIPT_NAME,
+                    signature='ss')
+                if sid is None or sid < 0:
+                    # A stale script with this name (e.g. after a crash)
+                    # blocks the load; drop it and retry once.
+                    try:
+                        self._kwin_scripting.unloadScript(
+                            _KWIN_SCRIPT_NAME)
+                    except dbus.DBusException:
+                        pass
+                    sid = self._kwin_scripting.loadScript(
+                        self._kwin_script_path, _KWIN_SCRIPT_NAME,
+                        signature='ss')
+                if sid is None or sid < 0:
+                    self._kwin_last_error = 'loadScript failed'
+                    self._kwin_fail_count += 1
+                    return None
+                try:
+                    srun = dbus.Interface(
+                        self._bus.get_object(
+                            'org.kde.KWin', '/Scripting/Script%s' % sid),
+                        'org.kde.kwin.Script')
+                    self._kwin_probe.reset()
+                    srun.run()
+                    srun.stop()
+                    if not self._kwin_probe.wait(2.0):
+                        self._kwin_last_error = 'no reply in 2s'
+                        self._kwin_fail_count += 1
+                        return None
+                    x_s, y_s = self._kwin_probe.payload().split(',')
+                    self._kwin_fail_count = 0
+                    return int(x_s), int(y_s)
+                finally:
+                    try:
+                        self._kwin_scripting.unloadScript(
+                            _KWIN_SCRIPT_NAME)
+                    except Exception:
+                        logger.debug(
+                            "unloadScript failed", exc_info=True)
+            except Exception as exc:
+                self._kwin_last_error = str(exc) or 'read failed'
+                logger.debug("KWin cursor read failed: %s", exc)
+                self._kwin_fail_count += 1
+                return None
+
+    def get_cursor_pos(self):
+        # KWin is the primary source: exact compositor truth. xdotool
+        # only works while the pointer is over an XWayland surface and
+        # is frozen otherwise.
+        pos = self._kwin_pos_warned()
+        if pos is not None:
+            return pos
+        pos = self._xdotool_pos()
+        if pos is not None:
+            return pos
         # xdotool needs XWayland; without it fall back to our last
         # known position instead of poisoning callers with (0, 0).
         self._lazy_init_tracked_pos()
@@ -261,17 +541,16 @@ class KdeWaylandDriver(DesktopManager):
 
     def _sync_tracked_pos(self):
         """Best-effort refresh of the tracked position from the system."""
-        try:
-            out = subprocess.check_output(
-                ['xdotool', 'getmouselocation'],
-                stderr=subprocess.DEVNULL, timeout=2
-            ).decode().strip()
-            parts = dict(p.split(':') for p in out.split() if ':' in p)
-            self._cur_x, self._cur_y = int(parts['x']), int(parts['y'])
+        # Same source order as get_cursor_pos: KWin first, xdotool
+        # second, tracked fallback last.
+        pos = self._kwin_pos_warned()
+        if pos is None:
+            pos = self._xdotool_pos()
+        if pos is not None:
+            self._cur_x, self._cur_y = pos
             self._pos_initialized = True
-        except Exception as exc:
-            logger.debug("tracked-pos sync failed: %s", exc)
-            self._lazy_init_tracked_pos()
+            return
+        self._lazy_init_tracked_pos()
 
     def sync_for_playback(self):
         """One-time position re-sync, called when a replay starts."""
@@ -321,16 +600,15 @@ class KdeWaylandDriver(DesktopManager):
         if self._pos_initialized:
             return
         self._pos_initialized = True
-        # Inline xdotool read (not via get_cursor_pos: that falls back
+        # Inline read (not via get_cursor_pos: that falls back
         # to this method, so calling it here would recurse forever).
-        try:
-            out = subprocess.check_output(
-                ['xdotool', 'getmouselocation'],
-                stderr=subprocess.DEVNULL, timeout=2
-            ).decode().strip()
-            parts = dict(p.split(':') for p in out.split() if ':' in p)
-            self._cur_x, self._cur_y = int(parts['x']), int(parts['y'])
-        except Exception:
+        # Source order matches get_cursor_pos: KWin, then xdotool.
+        pos = self._kwin_pos_warned()
+        if pos is None:
+            pos = self._xdotool_pos()
+        if pos is not None:
+            self._cur_x, self._cur_y = pos
+        else:
             logger.debug("no live position available; tracking from (0, 0)",
                          exc_info=True)
 
