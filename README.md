@@ -241,6 +241,12 @@ tools/appimage/build.sh
 
 Builds a reproducible AppImage on top of python-build-standalone.
 
+Note: the bundled python-build-standalone Tk is compiled without
+fontconfig/Xft, so it only knows bitmap fonts — the AppImage toolbar shows
+ASCII text labels (REC/PLAY/LOOP/SET/STOP) instead of the glyph icons, by
+design. A source install via `tools/run.sh` uses the system fonts and the
+original glyph labels; the GUI is otherwise identical.
+
 ## Troubleshooting
 
 | Symptom | Fix |
