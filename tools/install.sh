@@ -173,7 +173,7 @@ cat > "$DESKTOP_DIR/linuxtask.desktop" <<EOF
 [Desktop Entry]
 Name=LinuxTask
 Comment=Minimalist Macro Recorder for Linux
-Exec=$ABS_RUN_PATH
+Exec="$ABS_RUN_PATH"
 Icon=$ABS_ICON_PATH
 Terminal=false
 Type=Application
