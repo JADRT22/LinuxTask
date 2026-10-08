@@ -17,7 +17,7 @@ dependencies = [
 linuxtask = "linuxtask_main:main"
 
 [tool.setuptools]
-py-modules = ["linuxtask_main"]
+py-modules = ["linuxtask_main", "recorder", "playback"]
 packages = ["drivers"]
 
 [tool.appimage]
@@ -25,3 +25,12 @@ app = "LinuxTask"
 entry_point = "linuxtask"
 python = "3.12"
 icon = "icon.png"
+# KDE Wayland driver needs dbus + PyGObject at runtime; they are not
+# on PyPI as cp312 glibc wheels, so build.sh source-builds them with
+# the bundled interpreter and these file: wheels get pip-installed
+# into the bundled site-packages by appimage.ctl's --package path.
+packages = [
+    "../wheels/dbus_python-1.5.0-cp312-cp312-linux_x86_64.whl",
+    "../wheels/pycairo-1.29.2-cp312-cp312-linux_x86_64.whl",
+    "../wheels/pygobject-3.58.0-cp312-cp312-linux_x86_64.whl",
+]
