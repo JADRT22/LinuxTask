@@ -32,4 +32,6 @@ jobs:
         python -m unittest tests/test_main_flow.py
         python -m unittest tests/test_x11_driver.py
         python -m unittest tests/test_hyprland_driver.py
+        python -m unittest tests/test_sway_driver.py
+        python -m unittest tests/test_driver_factory.py
         python -m unittest tests/test_input_devices.py

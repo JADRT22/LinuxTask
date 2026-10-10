@@ -30,6 +30,7 @@ interface.
 - **GNOME Wayland only**: a running `ydotoold` daemon
 - **KDE Wayland only**: `python3-dbus` and `python3-gi` from your distro
   repositories (they cannot be built from PyPI without C headers)
+- **Sway only**: `swaymsg` in `PATH` (ships with `sway`/`swayfx`)
 - Membership in the `input` group and access to `/dev/uinput`
   (the installer configures both)
 

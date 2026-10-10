@@ -49,9 +49,10 @@ def AutoDetectDriver():
 
     Detection order:
         1. Hyprland (via HYPRLAND_INSTANCE_SIGNATURE)
-        2. XDG_CURRENT_DESKTOP matching
-        3. X11 fallback (via DISPLAY env var)
-        4. Error if nothing matches
+        2. Sway (via SWAYSOCK, then XDG_CURRENT_DESKTOP)
+        3. XDG_CURRENT_DESKTOP matching
+        4. X11 fallback (via DISPLAY env var)
+        5. Error if nothing matches
     """
 
     # 1. Check for Hyprland-specific signature
@@ -60,13 +61,24 @@ def AutoDetectDriver():
         logger.info("Detected environment: Hyprland")
         return HyprlandDriver()
 
-    # 2. Check XDG_CURRENT_DESKTOP
+    # 2. Check for the Sway IPC socket (set by sway itself)
+    if os.environ.get("SWAYSOCK"):
+        from .sway import SwayDriver
+        logger.info("Detected environment: Sway")
+        return SwayDriver()
+
+    # 3. Check XDG_CURRENT_DESKTOP
     current_desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
 
     if "HYPRLAND" in current_desktop:
         from .hyprland import HyprlandDriver
         logger.info("Detected environment: Hyprland (via XDG)")
         return HyprlandDriver()
+
+    if "SWAY" in current_desktop:
+        from .sway import SwayDriver
+        logger.info("Detected environment: Sway (via XDG)")
+        return SwayDriver()
 
     if "GNOME" in current_desktop:
         session_type = os.environ.get("XDG_SESSION_TYPE", "").lower()
@@ -125,6 +137,6 @@ def AutoDetectDriver():
     # 4. No supported environment detected
     raise RuntimeError(
         f"Unsupported desktop environment: '{current_desktop}'. "
-        f"LinuxTask requires X11, KDE Wayland, Hyprland, "
+        f"LinuxTask requires X11, KDE Wayland, Hyprland, Sway, "
         f"or GNOME Wayland."
     )

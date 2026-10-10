@@ -144,6 +144,12 @@ if ! command -v xdotool >/dev/null 2>&1; then
     install_package xdotool || fail "Could not install xdotool."
 fi
 
+# 0.2 swaymsg is shipped by sway itself, so a Sway desktop always has it;
+# installing 'sway' here would pull a whole compositor. Just check for it.
+if [ -n "${SWAYSOCK:-}" ] && ! command -v swaymsg >/dev/null 2>&1; then
+    fail "swaymsg not found in PATH. Reinstall 'sway' (or 'swayfx') from your package manager."
+fi
+
 # 1. Ensure 'input' group exists
 sudo groupadd -f input || fail "Could not create the 'input' group."
 

@@ -128,6 +128,7 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         elif env_name == "Gnome": env_name = "GNOME Edition"
         elif env_name == "KdeWayland": env_name = "KDE Wayland Edition"
         elif env_name == "Hyprland": env_name = "Hyprland Edition"
+        elif env_name == "Sway": env_name = "Sway Edition"
         else: env_name = f"{env_name} Edition"
         self.title(f"LinuxTask v{APP_VERSION} - {env_name}")
         # Compact toolbar (TinyTask-inspired): 400x44 instead of 420x50.

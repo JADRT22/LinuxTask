@@ -2,7 +2,7 @@
 
 > 👤 More projects: [@JADRT22](https://github.com/JADRT22) — Hyprland automation • Roblox on Linux • MCP/agents
 
-**A minimalist macro recorder for Linux — record and replay keyboard + mouse macros. Drivers exist for KDE Plasma Wayland, Hyprland, GNOME Wayland and X11 (see Status below).**
+**A minimalist macro recorder for Linux — record and replay keyboard + mouse macros. Drivers exist for KDE Plasma Wayland, Hyprland, Sway, GNOME Wayland and X11 (see Status below).**
 
 [![Release](https://img.shields.io/github/v/release/JADRT22/LinuxTask?style=flat-square)](https://github.com/JADRT22/LinuxTask/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/JADRT22/LinuxTask/python-app.yml?style=flat-square&label=tests)](https://github.com/JADRT22/LinuxTask/actions/workflows/python-app.yml)
@@ -21,7 +21,7 @@ automation tools.
 ## Features
 
 - **Cross-desktop drivers** — native backends for X11 (Cinnamon, MATE, XFCE…),
-  GNOME Wayland, Hyprland and KDE Wayland, auto-detected at startup.
+  GNOME Wayland, Hyprland, Sway and KDE Wayland, auto-detected at startup.
 - **Hardware-precision capture** — raw `evdev` event reading with
   deduplication across multiple input devices and `time.monotonic()`-based
   scheduling, immune to NTP and DST clock jumps.
@@ -49,21 +49,29 @@ This README describes v3.1.2 (`APP_VERSION` in `src/main.py`).
 | Hyprland | **Tested by the author: record, replay and clicks** |
 | GNOME Wayland | Implemented, not tested by the author |
 | X11 desktops (Cinnamon, MATE, XFCE…) | **Tested by the author: record, replay and clicks** |
+| Sway | Implemented, not tested by the author |
 
 Implemented capability matrix (the Hyprland, KDE Plasma Wayland and X11 columns are tested by the author):
 
-| | X11 desktops | GNOME Wayland | Hyprland | KDE Wayland |
-|---|---|---|---|---|
-| **Driver** | `python-xlib` (XTest) | `ydotool` | `hyprctl` | XDG Portal (RemoteDesktop) |
-| Mouse click | ✅ | ✅ | ✅ (uinput) | ✅ (evdev button codes via the portal) |
-| Absolute move | ✅ | ❌ (emulated by deltas) | ✅ | ✅ (true position read from KWin, exact) |
-| Relative move | ✅ | ✅ | ✅ | ✅ |
-| Scroll | ✅ | ✅ | ✅ (uinput) | ✅ |
-| Keyboard | ✅ (uinput) | ✅ (uinput) | ✅ (uinput) | ✅ |
+| | X11 desktops | GNOME Wayland | Hyprland | KDE Wayland | Sway |
+|---|---|---|---|---|---|
+| **Driver** | `python-xlib` (XTest) | `ydotool` | `hyprctl` | XDG Portal (RemoteDesktop) | `swaymsg` (seat IPC) |
+| Mouse click | ✅ | ✅ | ✅ (uinput) | ✅ (evdev button codes via the portal) | ✅ (`cursor press/release`) |
+| Absolute move | ✅ | ❌ (emulated by deltas) | ✅ | ✅ (true position read from KWin, exact) | ⚠️ warp only — absolute *recording* is impossible (see below) |
+| Relative move | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Scroll | ✅ | ✅ | ✅ (uinput) | ✅ | ✅ (`button4`/`button5`) |
+| Keyboard | ✅ (uinput) | ✅ (uinput) | ✅ (uinput) | ✅ | ✅ (uinput) |
 
 The driver is selected automatically from `XDG_CURRENT_DESKTOP`,
-`XDG_SESSION_TYPE` and `HYPRLAND_INSTANCE_SIGNATURE`; unsupported desktops
-with a running X server fall back to the X11 driver.
+`XDG_SESSION_TYPE`, `HYPRLAND_INSTANCE_SIGNATURE` and `SWAYSOCK`; unsupported
+desktops with a running X server fall back to the X11 driver.
+
+> **Sway records relative motion.** The sway IPC can *warp* the cursor
+> (`seat <seat> cursor set <x> <y>`, used at playback to honour a macro's
+> `start_pos` and `pos` events) but it cannot *read* the position back — there
+> is no equivalent of `get_seats` cursor data. So Sway records `rel` deltas
+> like the GNOME driver, and macros recorded elsewhere still replay there
+> through the uinput fallback. See [issue #4](https://github.com/JADRT22/LinuxTask/issues/4).
 
 > **Note:** every cell marked `(uinput)` above needs a working `/dev/uinput`
 > device. When it is missing, the app logs a warning (`"... dropped ...
@@ -98,7 +106,7 @@ git clone https://github.com/JADRT22/LinuxTask.git && cd LinuxTask && ./tools/in
 
 Record with **F8**, replay with **F9** — global hotkeys work in any window.
 
-> 🇧🇷 **Em Português:** LinuxTask é um gravador de macros para Linux — grava e reproduz teclado e mouse no Hyprland, GNOME Wayland, KDE Wayland e X11, com captura via `evdev` e reprodução por `uinput`/APIs do compositor. Instalação: `./tools/install.sh`, uso: `./tools/run.sh` (atalhos globais F8/F9).
+> 🇧🇷 **Em Português:** LinuxTask é um gravador de macros para Linux — grava e reproduz teclado e mouse no Hyprland, Sway, GNOME Wayland, KDE Wayland e X11, com captura via `evdev` e reprodução por `uinput`/APIs do compositor. Instalação: `./tools/install.sh`, uso: `./tools/run.sh` (atalhos globais F8/F9).
 
 ## How it works
 
@@ -108,6 +116,7 @@ graph TD
     Factory -->|auto-detect| X11[X11Driver · XTest]
     Factory -->|auto-detect| Gnome[GnomeDriver · ydotool]
     Factory -->|auto-detect| Hypr[HyprlandDriver · hyprctl]
+    Factory -->|auto-detect| Sway[SwayDriver · swaymsg]
     Factory -->|auto-detect| Kde[KdeWaylandDriver · Portal]
 
     Listener[evdev Listener threads] -->|raw events + dedupe| Queue[Event Timeline]
@@ -137,6 +146,7 @@ graph TD
 - **GNOME Wayland only**: a running `ydotoold` daemon
 - **KDE Wayland only**: `python3-dbus` and `python3-gi` from your distro
   repositories (they cannot be built from PyPI without C headers)
+- **Sway only**: `swaymsg` in `PATH` (ships with `sway`/`swayfx`)
 - Membership in the `input` group and access to `/dev/uinput`
   (the installer configures both)
 
@@ -252,7 +262,7 @@ original glyph labels; the GUI is otherwise identical.
 | Symptom | Fix |
 |---|---|
 | `Permission denied` on start | Re-run `./tools/install.sh` to refresh `udev` rules and group membership |
-| Cursor does not move | Check the driver's external dependency: `ydotool` daemon running (GNOME Wayland), `hyprctl` in `PATH` (Hyprland), portal permission granted (KDE Wayland) |
+| Cursor does not move | Check the driver's external dependency: `ydotool` daemon running (GNOME Wayland), `hyprctl` in `PATH` (Hyprland), `swaymsg` in `PATH` (Sway), portal permission granted (KDE Wayland) |
 | Hotkeys do not fire | Verify the `input` group: `groups $USER` — re-login after being added |
 | Missing dependency dialog | Follow the printed instructions (`python-xlib` via pip; `python3-dbus`/`python3-gi` via your package manager) |
 

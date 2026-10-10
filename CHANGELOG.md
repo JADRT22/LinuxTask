@@ -10,6 +10,20 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Added
+- **Sway driver**: `src/drivers/sway.py` drives Sway (and swayfx) through the
+  seat IPC — `cursor move` for relative motion, `cursor set` to warp absolute,
+  `cursor press/release` for buttons (`button1`/`button2`/`button3`) and
+  scroll via `button4`/`button5`. Detected first through `SWAYSOCK` and then
+  `XDG_CURRENT_DESKTOP`, before the generic X11 fallback, so the warning
+  from issue #4 no longer fires on Sway. Because the sway IPC has no way to
+  read the cursor position back, the driver sets
+  `supports_absolute_positioning = False` and records relative deltas like the
+  GNOME driver; `cursor set` is still used at replay for `start_pos` and `pos`
+  events. Resolution comes from `swaymsg -t get_outputs` (output `rect`, with
+  `current_mode` as fallback). `tools/install.sh` checks for `swaymsg` on
+  Sway and fails with install guidance instead of installing the compositor.
+
 ### Documentation
 - **README status table matches the capability matrix**: Hyprland and the X11
   desktops are marked as author-tested (record, replay and clicks), on par with
@@ -17,6 +31,9 @@ same date as v2.4.0, and with no tag that date cannot be checked).
   this the table said only KDE was tested while the matrix below it claimed
   three columns were verified. GNOME Wayland stays marked as implemented but
   not tested by the author.
+- **Sway column added** to the capability matrix, with a note explaining why
+  absolute recording is impossible there (no cursor query in the sway IPC)
+  and that macros still replay through the uinput fallback.
 
 ## [v3.1.2] - 2026-10-07
 
