@@ -10,6 +10,14 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Documentation
+- **README status table matches the capability matrix**: Hyprland and the X11
+  desktops are marked as author-tested (record, replay and clicks), on par with
+  the KDE Plasma Wayland column that was already listed as verified. Before
+  this the table said only KDE was tested while the matrix below it claimed
+  three columns were verified. GNOME Wayland stays marked as implemented but
+  not tested by the author.
+
 ## [v3.1.2] - 2026-10-07
 
 ### Added
