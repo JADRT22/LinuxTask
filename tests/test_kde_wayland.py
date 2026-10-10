@@ -132,9 +132,13 @@ def make_kwin_driver(load_result=7, probe_payload='123,456',
     return driver
 
 
-def mock_xdotool(x=5, y=6):
+def mock_xdotool(x=5, y=6, failing=False):
     """Patch the xdotool read to return a known position (bytes, as
-    subprocess.check_output would)."""
+    subprocess.check_output would). failing=True makes the call raise,
+    which is how a missing xdotool or an XWayland-less session shows up."""
+    if failing:
+        return patch('drivers.kde_wayland.subprocess.check_output',
+                     side_effect=OSError('xdotool missing'))
     return patch('drivers.kde_wayland.subprocess.check_output',
                  return_value=f'x:{x} y:{y} screen:0 window:9'.encode())
 
@@ -215,7 +219,33 @@ class TestKdeWaylandCursorRead(unittest.TestCase):
         self.assertEqual((driver._cur_x, driver._cur_y), (400, 300))
         self.assertTrue(driver._pos_initialized)
 
-    def test_absolute_move_after_bare_read_lands_on_target(self):
+    def test_absolute_move_anchors_a_cold_origin(self):
+        # First absolute move with no prior read: the driver must not
+        # dead-reckon from (0, 0), or the pointer lands at real+target.
+        driver = make_kwin_driver(probe_payload='500,500')
+        driver.screen_width, driver.screen_height = 1600, 900
+        driver._portal_ready = True
+        driver._session_handle = '/s'
+        driver._portal = MagicMock()
+        driver._pos_initialized = False
+        driver.move_cursor(600, 550)
+        delta = driver._portal.NotifyPointerMotion.call_args[0][2:4]
+        self.assertEqual(delta, (100, 50))
+
+    def test_failed_anchor_leaves_the_origin_cold(self):
+        # A read that finds no position must not mark the tracked
+        # position initialised, or the next move can never anchor.
+        driver = make_kwin_driver(load_result=-1)
+        with mock_xdotool(failing=True):
+            driver._lazy_init_tracked_pos()
+        self.assertFalse(driver._pos_initialized)
+        # Still retryable: a working source anchors on the next call.
+        with mock_xdotool(70, 80):
+            driver._lazy_init_tracked_pos()
+        self.assertTrue(driver._pos_initialized)
+        self.assertEqual((driver._cur_x, driver._cur_y), (70, 80))
+
+    def test_read_then_absolute_move_lands_on_target(self):
         # End-to-end on the mocked IPC: read once, then warp. This is
         # the sequence playback performs when a macro starts mid-session.
         driver = make_kwin_driver(probe_payload='500,500')

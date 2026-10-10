@@ -34,6 +34,22 @@ same date as v2.4.0, and with no tag that date cannot be checked).
   the start-position warp at the top of each playback pass, where a dead
   driver used to leave the pointer wherever the previous pass ended and
   loop repeats drifted.
+- **The first absolute move of a session now lands on target**: nothing
+  read the cursor position before the first `move_cursor`, so the
+  dead-reckoning origin was still cold `(0, 0)` and the pointer ended up
+  at `(real + target)`. This broke both halves of the app — recording
+  (the first click of a macro) and replay (the first `pos` event) — and
+  survived the fix above, because that one only anchors the origin once a
+  read has already happened. `move_cursor` now anchors a cold origin with
+  one live read before computing its delta, so a driver that never went
+  through `sync_for_playback` still lands correctly.
+- **A failed cursor read no longer freezes the tracked origin**: the lazy
+  anchor marked the position initialised before it knew the read had
+  succeeded, so a single unreadable position (no KWin scripting, no
+  xdotool, no XWayland) left the origin stuck at `(0, 0)` for the rest of
+  the driver's life. The flag is now set only on a successful read, and
+  the next absolute move tries to anchor again instead of dead-reckoning
+  from the screen corner forever.
 
 ## [v3.2.0] - 2026-10-10
 

@@ -531,6 +531,14 @@ class KdeWaylandDriver(DesktopManager):
             # every delta from a stale origin and the cursor would
             # fight itself (jump forward, snap back). Re-sync happens
             # once per playback in sync_for_playback(), not per move.
+            #
+            # The origin must be anchored first, though: a driver whose
+            # tracked position was never initialised computes the first
+            # delta from (0, 0), so the pointer ends up at
+            # (real + target) instead of at target. One live read fixes
+            # it, and only costs anything while the position is cold.
+            if not self._pos_initialized:
+                self._lazy_init_tracked_pos()
             cx, cy = self._clamp(x, y)
             dx = cx - self._cur_x
             dy = cy - self._cur_y
@@ -605,15 +613,18 @@ class KdeWaylandDriver(DesktopManager):
     def _lazy_init_tracked_pos(self):
         if self._pos_initialized:
             return
-        self._pos_initialized = True
         # Inline read (not via get_cursor_pos: that falls back
         # to this method, so calling it here would recurse forever).
         # Source order matches get_cursor_pos: KWin, then xdotool.
         pos = self._kwin_pos_warned()
         if pos is None:
             pos = self._xdotool_pos()
+        # Mark the position as initialised only on a successful read:
+        # a failed one must leave it cold so the next move_cursor tries
+        # to anchor again instead of dead-reckoning from (0, 0) forever.
         if pos is not None:
             self._cur_x, self._cur_y = pos
+            self._pos_initialized = True
         else:
             logger.debug("no live position available; tracking from (0, 0)",
                          exc_info=True)
