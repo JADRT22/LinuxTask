@@ -10,6 +10,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+## [v3.2.0] - 2026-10-10
+
 ### Added
 - **Sway driver**: `src/drivers/sway.py` drives Sway (and swayfx) through the
   seat IPC — `cursor move` for relative motion, `cursor set` to warp absolute,
@@ -431,7 +433,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 - **Movement-precision tests**: `test_jitter.py` added to cover movement
   precision with unit tests.
 
-[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.1.2...HEAD
+[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.2.0...HEAD
+[v3.2.0]: https://github.com/JADRT22/LinuxTask/compare/v3.1.2...v3.2.0
 [v3.1.2]: https://github.com/JADRT22/LinuxTask/compare/v3.1.1...v3.1.2
 [v3.1.1]: https://github.com/JADRT22/LinuxTask/compare/v3.1.0...v3.1.1
 [v3.1.0]: https://github.com/JADRT22/LinuxTask/compare/v3.0.3...v3.1.0
