@@ -401,6 +401,75 @@ class TestPlaybackDispatch(unittest.TestCase):
         self.assertIn("driver_warning", items)
         self.assertEqual(items[-1], "play_finished")
 
+    def test_absolute_move_falls_back_to_uinput_delta(self):
+        # A driver that refuses move_cursor (dead portal on KDE Wayland)
+        # used to drop the absolute event entirely. The delta from the
+        # last known position now goes to the virtual device instead.
+        self.app.uinput_device = MagicMock()
+        self.app.manager.move_cursor.return_value = False
+        self.app.manager.get_cursor_pos.return_value = (100, 200)
+        # Only the start-pos warp runs, so the failure under test is
+        # isolated to the macro's own 'pos' event.
+        self.app.events = [
+            {"type": "pos", "x": 300, "y": 400, "time": 0.0},
+        ]
+
+        self.app.start_playback()
+        deadline = time.monotonic() + 5
+        while self.app.playing and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertFalse(self.app.playing)
+
+        rel_writes = [c.args for c in self.app.uinput_device.write.call_args_list
+                      if c.args[0] == e.EV_REL]
+        # start_pos (100, 200) -> already there, no write; then (300, 400).
+        self.assertIn((e.EV_REL, e.REL_X, 200), rel_writes)
+        self.assertIn((e.EV_REL, e.REL_Y, 200), rel_writes)
+        self.assertTrue(self.app.uinput_device.syn.called)
+
+    def test_absolute_move_is_skipped_when_no_uinput(self):
+        # No virtual device: the refused absolute move is still not a
+        # crash, and the driver is the only thing attempted.
+        self.app.uinput_device = None
+        self.app.manager.move_cursor.return_value = False
+        self.app.events = [
+            {"type": "pos", "x": 300, "y": 400, "time": 0.0},
+        ]
+
+        self.app.start_playback()
+        deadline = time.monotonic() + 5
+        while self.app.playing and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertFalse(self.app.playing)
+
+        self.app.manager.move_cursor.assert_any_call(300, 400)
+        from queue import Empty
+        items = []
+        try:
+            while True:
+                items.append(self.app._ui_queue.get_nowait())
+        except Empty:
+            pass
+        self.assertIn("driver_warning", items)
+
+    def test_start_pos_warps_through_uinput_when_driver_raises(self):
+        # move_cursor raising (not just returning False) must not lose
+        # the loop's cursor reset: loop repeats would otherwise drift.
+        self.app.uinput_device = MagicMock()
+        self.app.start_cursor_pos = (50, 60)
+        self.app.manager.move_cursor = MagicMock(side_effect=OSError("dead"))
+        self.app.manager.get_cursor_pos.return_value = (50, 60)
+        self.app.events = [
+            {"type": "rel", "dx": 0, "dy": 0, "time": 0.0},
+        ]
+
+        self.app.start_playback()
+        deadline = time.monotonic() + 5
+        while self.app.playing and time.monotonic() + deadline:
+            time.sleep(0.01)
+        # No exception escaped the playback thread.
+        self.assertFalse(self.app.playing)
+
     def test_speed_divides_event_times(self):
         self.app.events = [
             {"type": "pos", "x": 1, "y": 2, "time": 2.0},

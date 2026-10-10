@@ -10,6 +10,19 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Fixed
+- **Absolute moves no longer vanish when a driver refuses them**: a `pos`
+  event called `move_cursor` and, on `False`, only queued the one-shot
+  driver warning — the cursor went nowhere and the macro replayed as
+  nothing. Every other event type (`rel`, `scroll`, `key`) already fell
+  back to the virtual `uinput` device; the absolute path was the only
+  one without a fallback. The refused move now decomposes into a delta
+  from the driver's last known position and is written as `EV_REL`, which
+  the kernel accepts regardless of driver state. The same fallback covers
+  the start-position warp at the top of each playback pass, where a dead
+  driver used to leave the pointer wherever the previous pass ended and
+  loop repeats drifted.
+
 ## [v3.2.0] - 2026-10-10
 
 ### Added

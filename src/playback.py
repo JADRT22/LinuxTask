@@ -72,16 +72,58 @@ class Playback:
             if not warned_ui:
                 warned_ui = True
                 self._ui_queue.put("driver_warning")
+
+        def warp_uinput(x, y):
+            """Moves the cursor to (x, y) through the virtual device.
+
+            The absolute path is the only event type a compositor driver
+            can refuse outright (a dead portal on KDE Wayland refuses
+            move_cursor before any D-Bus call), so it needs its own
+            fallback: the delta from the last known position is written as
+            EV_REL, which the kernel accepts regardless of driver state.
+            The tracked position is re-read before each hop, because a
+            live driver keeps it exact while the uinput write is only
+            best-effort.
+            """
+            if self.uinput_device is None:
+                return False
+            try:
+                cur = self.manager.get_cursor_pos()
+            except Exception as exc:
+                logger.debug("get_cursor_pos failed: %s", exc)
+                cur = None
+            if not cur:
+                return False
+            cx, cy = cur
+            dx, dy = x - cx, y - cy
+            if dx == 0 and dy == 0:
+                return True
+            try:
+                self.uinput_device.write(e.EV_REL, e.REL_X, int(dx))
+                self.uinput_device.write(e.EV_REL, e.REL_Y, int(dy))
+                self.uinput_device.syn()
+                return True
+            except Exception as exc:
+                logger.debug("uinput warp to (%d, %d) failed: %s",
+                             x, y, exc)
+                return False
         try:
             while self.playing:
                 if self.start_cursor_pos is not None:
-                    try:
-                        self.manager.move_cursor(*self.start_cursor_pos)
-                        time.sleep(0.01)
-                    except Exception as exc:
-                        logger.debug(
-                            "Could not reset cursor position: %s", exc
-                        )
+                    # A dead driver must not leave the pointer wherever
+                    # the previous pass ended: loop repeats would then
+                    # drift. The uinput warp is deliberately inside the
+                    # try, so a driver that returns False (refused) and
+                    # a driver that raises are handled the same way.
+                    if self.manager.move_cursor(
+                            *self.start_cursor_pos) is False:
+                        try:
+                            warp_uinput(*self.start_cursor_pos)
+                        except Exception as exc:
+                            logger.debug(
+                                "uinput start-pos warp failed: %s", exc
+                            )
+                    time.sleep(0.01)
 
                 start_p = time.monotonic()
                 try:
@@ -130,6 +172,10 @@ class Playback:
                         if ev['type'] == "pos":
                             if self.manager.move_cursor(ev['x'], ev['y']) is False:
                                 note_decline()
+                                # The virtual device is second choice, not
+                                # a skip: an absolute macro is otherwise
+                                # replayed as nothing at all.
+                                warp_uinput(ev['x'], ev['y'])
 
                         elif ev['type'] == "rel":
                             dx, dy = ev['dx'], ev['dy']
