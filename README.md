@@ -49,9 +49,9 @@ This README describes v3.1.2 (`APP_VERSION` in `src/main.py`).
 | Hyprland | **Tested by the author: record, replay and clicks** |
 | GNOME Wayland | Implemented, not tested by the author |
 | X11 desktops (Cinnamon, MATE, XFCE…) | **Tested by the author: record, replay and clicks** |
-| Sway | Implemented, not tested by the author |
+| Sway | **Tested by the author (headless 1.12): cursor warp, relative move, buttons and scroll via seat IPC** |
 
-Implemented capability matrix (the Hyprland, KDE Plasma Wayland and X11 columns are tested by the author):
+Implemented capability matrix (the Hyprland, KDE Plasma Wayland, Sway and X11 columns are tested by the author):
 
 | | X11 desktops | GNOME Wayland | Hyprland | KDE Wayland | Sway |
 |---|---|---|---|---|---|

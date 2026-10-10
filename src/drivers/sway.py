@@ -8,6 +8,7 @@ License: MIT
 
 import json
 import logging
+import shlex
 import shutil
 import subprocess
 from evdev.ecodes import BTN_LEFT, BTN_MIDDLE, BTN_RIGHT
@@ -39,10 +40,21 @@ class SwayDriver(DesktopManager):
     # --- IPC helpers ---------------------------------------------------
 
     def _command(self, command, check=False):
-        """Sends a swaymsg IPC command. Returns parsed JSON or None."""
+        """Sends a swaymsg IPC command. Returns parsed JSON or None.
+
+        swaymsg's getopt permutes the argv and eats negative coordinates
+        (`cursor move -30 40`), so a '--' separator is added whenever the
+        command carries one. It must stay off for '-t <type>' queries, where
+        the leading '-t' is the option itself.
+        """
         try:
+            args = shlex.split(command)
+            argv = [self.swaymsg_path]
+            if any(a[1:].isdigit() for a in args if a.startswith("-")):
+                argv.append("--")
+            argv.extend(args)
             out = subprocess.run(
-                [self.swaymsg_path, command],
+                argv,
                 capture_output=True, text=True, check=check, timeout=5
             )
             try:
@@ -110,14 +122,18 @@ class SwayDriver(DesktopManager):
     def _seat_cmd(self, sub, *args):
         """Runs 'seat <seat> cursor <sub> <args...>' and reports success.
 
-        swaymsg answers commands with a JSON object carrying `success`;
-        anything else (parse error, IPC failure) counts as not handled.
+        swaymsg answers commands with a JSON payload; for commands that can
+        be repeated in one request it is a list of result objects. Accept a
+        bare object too, so a single-result reply still counts as success.
         """
         command = "seat {} cursor {} {}".format(
             self._seat, sub, " ".join(str(a) for a in args)
         )
         reply = self._command(command)
-        return isinstance(reply, dict) and reply.get("success") is True
+        results = reply if isinstance(reply, list) else [reply]
+        return any(
+            isinstance(r, dict) and r.get("success") is True for r in results
+        )
 
     def move_cursor(self, x, y):
         """Warps the cursor to absolute coordinates ('cursor set')."""

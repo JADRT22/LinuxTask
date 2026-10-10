@@ -23,6 +23,17 @@ same date as v2.4.0, and with no tag that date cannot be checked).
   events. Resolution comes from `swaymsg -t get_outputs` (output `rect`, with
   `current_mode` as fallback). `tools/install.sh` checks for `swaymsg` on
   Sway and fails with install guidance instead of installing the compositor.
+- **Sway driver verified against a live compositor**: the author ran sway 1.12
+  headless on a private `SWAYSOCK` (leaving the desktop session untouched) and
+  exercised `SwayDriver` end to end — seat resolved to `seat0`, resolution read
+  as 1024×768 from `get_outputs`, `cursor move 10 -5`, `cursor set 100 200`,
+  clamping to the last pixel, button press/release and `button4`/`button5`
+  scroll all answered `success: true`. That run exposed two bugs the mocked
+  tests could not: swaymsg answers commands with a JSON **array**
+  (`[{"success": true}]`), not a bare object, and its `getopt` eats negative
+  coordinates (`cursor move -30 40` arrives as `cursor move 40`). Both are
+  fixed and covered by regression tests, and the README status table now lists
+  Sway as author-tested instead of "implemented, not tested".
 
 ### Documentation
 - **README status table matches the capability matrix**: Hyprland and the X11

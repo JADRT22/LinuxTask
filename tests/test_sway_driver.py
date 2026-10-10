@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import sys
 import os
+import subprocess
 
 # Adjust path to import drivers
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
@@ -96,10 +97,18 @@ class TestSwayDriver(unittest.TestCase):
             cmd.return_value = None
             self.assertFalse(driver.move_relative(10, 10))
 
+    def test_accepts_swaymsg_array_reply(self):
+        # swaymsg answers 'cursor' commands with a list of result objects:
+        #   [{"success": true}]
+        driver = self._make_driver()
+        with patch.object(driver, "_command") as cmd:
+            cmd.return_value = [{"success": True}]
+            self.assertTrue(driver.move_relative(10, 10))
+
     def test_move_relative_returns_false_on_failed_command(self):
         driver = self._make_driver()
         with patch.object(driver, "_command") as cmd:
-            cmd.return_value = {"success": False, "parse_error": True}
+            cmd.return_value = [{"success": False, "parse_error": "..."}]
             self.assertFalse(driver.move_relative(10, 10))
 
     def test_mouse_button_maps_evdev_to_sway_names(self):
@@ -153,6 +162,35 @@ class TestSwayDriver(unittest.TestCase):
                 driver = SwayDriver()
             with patch("subprocess.run", side_effect=OSError("no sway")):
                 self.assertFalse(driver.move_relative(1, 1))
+
+    def test_negative_coordinates_survive_getopt(self):
+        # 'swaymsg cursor move -30 40' loses '-30' to getopt; a '--' separator
+        # keeps the coordinate on the command side.
+        driver = self._make_driver()
+        with patch("subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess(
+                run.call_args, 0, '[{"success": true}]', ""
+            )
+            driver.move_relative(-30, 40)
+            self.assertEqual(
+                run.call_args[0][0],
+                [driver.swaymsg_path, "--", "seat", "seat0", "cursor",
+                 "move", "-30", "40"],
+            )
+
+    def test_query_type_is_not_separated(self):
+        # Adding '--' before a '-t get_x' query turns the type into a
+        # command name, so get_seats/get_outputs must reach getopt bare.
+        driver = self._make_driver()
+        with patch("subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess(
+                run.call_args, 0, "[]", ""
+            )
+            driver._command("-t get_seats")
+            self.assertEqual(
+                run.call_args[0][0],
+                [driver.swaymsg_path, "-t", "get_seats"],
+            )
 
     def test_self_test_reports_success(self):
         driver = self._make_driver()
