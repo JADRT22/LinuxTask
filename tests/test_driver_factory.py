@@ -10,10 +10,20 @@ import unittest
 from unittest.mock import patch
 import sys
 import os
+import types
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from drivers.factory import AutoDetectDriver
+
+# Every module the factory can import, with the class it exposes.
+DRIVER_MODULES = {
+    "drivers.sway": "SwayDriver",
+    "drivers.hyprland": "HyprlandDriver",
+    "drivers.gnome": "GnomeDriver",
+    "drivers.kde_wayland": "KdeWaylandDriver",
+    "drivers.x11": "X11Driver",
+}
 
 
 class TestAutoDetectDriver(unittest.TestCase):
@@ -27,17 +37,23 @@ class TestAutoDetectDriver(unittest.TestCase):
                               "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE")}
         clean.update(env)
         with patch.dict(os.environ, clean, clear=True):
-            with patch("drivers.sway.SwayDriver.__init__",
-                       return_value=None), \
-                 patch("drivers.hyprland.HyprlandDriver.__init__",
-                       return_value=None), \
-                 patch("drivers.gnome.GnomeDriver.__init__",
-                       return_value=None), \
-                 patch("drivers.kde_wayland.KdeWaylandDriver.__init__",
-                       return_value=None), \
-                 patch("drivers.x11.X11Driver.__init__",
-                       return_value=None):
+            with patch.dict(sys.modules, self._driver_stubs()):
                 return AutoDetectDriver()
+
+    def _driver_stubs(self):
+        """Builds do-nothing stand-ins for every driver module.
+
+        The real modules are never imported here: drivers.kde_wayland needs
+        dbus and PyGObject, which CI does not install. Only the class each
+        factory branch returns matters, so a stub per module is enough.
+        """
+        stubs = {}
+        for module_name, class_name in DRIVER_MODULES.items():
+            stub = types.ModuleType(module_name)
+            setattr(stub, class_name,
+                    type(class_name, (), {"__init__": lambda self: None}))
+            stubs[module_name] = stub
+        return stubs
 
     def test_swaysock_wins_over_desktop_name(self):
         driver = self._detect({
