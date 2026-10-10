@@ -11,6 +11,18 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 ## [Unreleased]
 
 ### Fixed
+- **KDE Wayland absolute moves landed at the wrong coordinates**: a live
+  cursor read never fed the driver's dead-reckoning origin. `_cur` starts
+  at `(0, 0)` and was only ever updated by `sync_for_playback` or
+  `move_relative`, so `move_cursor` computed every delta from the corner
+  of the screen — asking for `(400, 300)` moved the pointer by
+  `(+400, +300)` from wherever it happened to be instead of to that
+  coordinate. `get_cursor_pos` now writes the position it reads into
+  `_cur`, for the KWin source and for the xdotool fallback alike, so a
+  single read before an absolute move is enough to anchor it. Relative
+  moves, scroll and buttons were unaffected. Verified live against the
+  running portal: 4/4 warps exact within 3 px, with and without a prior
+  `sync_for_playback`.
 - **Absolute moves no longer vanish when a driver refuses them**: a `pos`
   event called `move_cursor` and, on `False`, only queued the one-shot
   driver warning — the cursor went nowhere and the macro replayed as

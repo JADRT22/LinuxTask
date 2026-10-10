@@ -203,6 +203,48 @@ class TestKdeWaylandCursorRead(unittest.TestCase):
         self.assertEqual((driver._cur_x, driver._cur_y), (11, 22))
         self.assertTrue(driver._pos_initialized)
 
+    def test_live_read_feeds_the_dead_reckoning_origin(self):
+        # move_cursor computes its delta from _cur, so a successful read
+        # must also update it. Without this, a driver that never went
+        # through sync_for_playback keeps its (0, 0) origin and every
+        # absolute move lands at (dx, dy) from the screen corner.
+        driver = make_kwin_driver(probe_payload='400,300')
+        self.assertEqual((driver._cur_x, driver._cur_y), (0, 0))
+        pos = driver.get_cursor_pos()
+        self.assertEqual(pos, (400, 300))
+        self.assertEqual((driver._cur_x, driver._cur_y), (400, 300))
+        self.assertTrue(driver._pos_initialized)
+
+    def test_absolute_move_after_bare_read_lands_on_target(self):
+        # End-to-end on the mocked IPC: read once, then warp. This is
+        # the sequence playback performs when a macro starts mid-session.
+        driver = make_kwin_driver(probe_payload='500,500')
+        driver.screen_width, driver.screen_height = 1600, 900
+        driver._portal_ready = True
+        driver._session_handle = '/s'
+        driver._portal = MagicMock()
+        driver.get_cursor_pos()
+        driver.move_cursor(600, 550)
+        delta = driver._portal.NotifyPointerMotion.call_args[0][2:4]
+        self.assertEqual(delta, (100, 50))
+
+    def test_xdotool_fallback_also_feeds_origin(self):
+        # No KWin: the fallback source must still leave _cur usable.
+        driver = make_kwin_driver(load_result=-1)
+        with mock_xdotool(31, 47):
+            self.assertEqual(driver.get_cursor_pos(), (31, 47))
+        self.assertEqual((driver._cur_x, driver._cur_y), (31, 47))
+
+    def test_unreadable_position_keeps_last_known_origin(self):
+        # Both sources dead: _cur must not be reset to anything, so
+        # subsequent deltas stay anchored where the driver last was.
+        driver = make_kwin_driver(load_result=-1)
+        with mock_xdotool(None, None):
+            self.assertEqual(driver.get_cursor_pos(), (0, 0))
+        driver._cur_x, driver._cur_y = 77, 88
+        with mock_xdotool(None, None):
+            self.assertEqual(driver.get_cursor_pos(), (77, 88))
+
     def test_setup_partial_failure_is_retryable(self):
         # Scripting stage fails after the probe/temp file were built:
         # the next attempt must reuse them (no re-registration error)

@@ -501,10 +501,16 @@ class KdeWaylandDriver(DesktopManager):
         # only works while the pointer is over an XWayland surface and
         # is frozen otherwise.
         pos = self._kwin_pos_warned()
+        if pos is None:
+            pos = self._xdotool_pos()
         if pos is not None:
-            return pos
-        pos = self._xdotool_pos()
-        if pos is not None:
+            # A live read is also the dead-reckoning origin: move_cursor
+            # computes its delta from _cur, so leaving it stale here
+            # makes every absolute move land at the wrong place (from
+            # (0, 0) on a fresh driver, or from wherever the last
+            # playback happened to be).
+            self._cur_x, self._cur_y = pos
+            self._pos_initialized = True
             return pos
         # xdotool needs XWayland; without it fall back to our last
         # known position instead of poisoning callers with (0, 0).
