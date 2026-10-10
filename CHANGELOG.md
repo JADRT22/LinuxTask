@@ -10,6 +10,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+## [v3.2.1] - 2026-10-10
+
 ### Fixed
 - **KDE Wayland absolute moves landed at the wrong coordinates**: a live
   cursor read never fed the driver's dead-reckoning origin. `_cur` starts
@@ -474,7 +476,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 - **Movement-precision tests**: `test_jitter.py` added to cover movement
   precision with unit tests.
 
-[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.2.1...HEAD
+[v3.2.1]: https://github.com/JADRT22/LinuxTask/compare/v3.2.0...v3.2.1
 [v3.2.0]: https://github.com/JADRT22/LinuxTask/compare/v3.1.2...v3.2.0
 [v3.1.2]: https://github.com/JADRT22/LinuxTask/compare/v3.1.1...v3.1.2
 [v3.1.1]: https://github.com/JADRT22/LinuxTask/compare/v3.1.0...v3.1.1
