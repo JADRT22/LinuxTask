@@ -37,15 +37,17 @@ class TestAutoDetectDriver(unittest.TestCase):
                               "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE")}
         clean.update(env)
         with patch.dict(os.environ, clean, clear=True):
-            with patch.dict(sys.modules, self._driver_stubs()):
-                return AutoDetectDriver()
+            with patch.dict(sys.modules, self._stubbed_modules()):
+                with patch("drivers.factory._ensure_importable"):
+                    return AutoDetectDriver()
 
-    def _driver_stubs(self):
-        """Builds do-nothing stand-ins for every driver module.
+    def _stubbed_modules(self):
+        """Builds stand-ins for every driver module.
 
-        The real modules are never imported here: drivers.kde_wayland needs
-        dbus and PyGObject, which CI does not install. Only the class each
-        factory branch returns matters, so a stub per module is enough.
+        No real driver module is imported: drivers.kde_wayland needs
+        dbus-python and PyGObject at import time, which CI does not have.
+        Only the class each factory branch returns matters, so one stub
+        per module is enough.
         """
         stubs = {}
         for module_name, class_name in DRIVER_MODULES.items():

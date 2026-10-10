@@ -35,6 +35,28 @@ same date as v2.4.0, and with no tag that date cannot be checked).
   fixed and covered by regression tests, and the README status table now lists
   Sway as author-tested instead of "implemented, not tested".
 
+### Fixed
+- **Sway seat IPC replies are parsed correctly**: `_seat_cmd` required a JSON
+  object with `success`, but swaymsg answers commands with a list of result
+  objects (`[{"success": true}]`), so every cursor move, button and scroll
+  reported failure against a real sway while passing the mocked tests.
+- **Sway negative coordinates survive swaymsg's getopt**: `cursor move -30 40`
+  reached sway as `cursor move 40`. A `--` separator is inserted before a
+  negative number, and stays off for `-t <type>` queries where the leading
+  `-t` is the option itself.
+- **Sway IPC commands are no longer passed as a single argv entry**: the
+  command string was handed to `swaymsg` as one argument, so `-t get_seats`
+  arrived as a literal message type and sway answered
+  `Unknown message type  get_seats`. The command is now `shlex.split` into
+  argv, which also fixes the seat and resolution detection that silently fell
+  back to `seat0` and 1920×1080.
+- **Driver-factory tests no longer break CI by importing every driver**: they
+  patched `drivers.kde_wayland...`, which force-imports the module. That module
+  needs `dbus-python` and `PyGObject` at import time and CI installs only
+  `requirements.txt`, so the suite failed with
+  `module 'drivers' has no attribute 'kde_wayland'`. Stub modules are injected
+  into `sys.modules` instead, and no real driver module is imported.
+
 ### Documentation
 - **README status table matches the capability matrix**: Hyprland and the X11
   desktops are marked as author-tested (record, replay and clicks), on par with
