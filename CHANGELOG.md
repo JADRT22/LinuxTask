@@ -56,6 +56,14 @@ same date as v2.4.0, and with no tag that date cannot be checked).
   `requirements.txt`, so the suite failed with
   `module 'drivers' has no attribute 'kde_wayland'`. Stub modules are injected
   into `sys.modules` instead, and no real driver module is imported.
+- **The AppImage smoke guard imports every driver**: it listed the split
+  modules, the D-Bus stack and the UI stack, but no driver module — the Sway
+  driver could have shipped (and did ship) with a broken import. The guard now
+  imports `drivers.sway`, `x11`, `gnome`, `hyprland` and `kde_wayland` plus
+  `Xlib` with the bundled interpreter, and
+  `tests/test_appimage_smoke_coverage.py` reads the guard out of `build.sh`
+  and fails when a module under `src/drivers/` is missing from it, so the gap
+  cannot reopen. Verified by a full AppImage rebuild with the guard expanded.
 
 ### Documentation
 - **README status table matches the capability matrix**: Hyprland and the X11

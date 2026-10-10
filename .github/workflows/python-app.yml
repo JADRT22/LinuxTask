@@ -35,3 +35,4 @@ jobs:
         python -m unittest tests/test_sway_driver.py
         python -m unittest tests/test_driver_factory.py
         python -m unittest tests/test_input_devices.py
+        python -m unittest tests/test_appimage_smoke_coverage.py

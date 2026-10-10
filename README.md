@@ -226,6 +226,11 @@ hardware and `tests/test_experimental_addons.py` needs numpy/Pillow plus
 a session, so neither runs in CI (see `.github/workflows/python-app.yml`
 for the exact CI list).
 
+`tests/test_appimage_smoke_coverage.py` reads
+`tools/appimage/build.sh` and fails when a driver module under
+`src/drivers/` is not on the smoke guard's import list, so a new driver
+cannot ship unimported again (the Sway driver did exactly that in 3.1.x).
+
 ### Release process
 
 ```bash

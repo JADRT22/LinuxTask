@@ -204,10 +204,12 @@ echo "--- building (downloads toolchain on first run) ---"
 
 # --- smoke guard: prove the bundle actually imports ------------------
 # Extract the fresh AppImage and import every module the app needs
-# (the split modules, the KDE Wayland D-Bus stack, the UI stack) with
-# the BUNDLED interpreter, including linuxtask_main itself plus its
-# APP_VERSION (a main module that fails to import or lost its version
-# constant must not pass green). A build that cannot pass this is broken.
+# (the split modules, all five drivers, the KDE Wayland D-Bus stack,
+# the UI stack) with the BUNDLED interpreter, including linuxtask_main
+# itself plus its APP_VERSION (a main module that fails to import or
+# lost its version constant must not pass green). Every driver is on
+# the list: the Sway driver shipped without being imported here at all.
+# A build that cannot pass this is broken.
 SMOKE_DIR="$(mktemp -d)"
 trap 'rm -rf "$SMOKE_DIR"' EXIT
 echo "--- smoke guard: extracting and importing with bundled python ---"
@@ -221,8 +223,11 @@ echo "--- smoke guard: extracting and importing with bundled python ---"
     exit 1
 }
 if ! "$SMOKE_DIR/squashfs-root/python/bin/python3.12" -c "
-import recorder, playback, dbus, drivers.factory, evdev, customtkinter
+import dbus, evdev, customtkinter, Xlib
 from gi.repository import GLib
+import recorder, playback
+import drivers.factory, drivers.sway, drivers.x11, drivers.gnome, drivers.hyprland
+import drivers.kde_wayland
 import linuxtask_main
 print('ok', linuxtask_main.APP_VERSION)
 " > "$SMOKE_DIR/smoke.out" 2> "$SMOKE_DIR/smoke.err"; then
