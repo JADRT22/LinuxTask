@@ -27,8 +27,8 @@ automation tools.
   scheduling, immune to NTP and DST clock jumps.
 - **Mouse support** — absolute and relative movement, button clicks and
   scroll wheel, with automatic fallback to the virtual `uinput` device when a
-  compositor cannot handle an action. KDE Plasma Wayland is fully
-  supported — record, replay and clicks verified by the author.
+  compositor cannot handle an action. KDE Plasma Wayland and Hyprland are
+  fully supported — record, replay and clicks verified by the author.
 - **Humanize mode** — optional ±2 px positional jitter and 0–3 % timing
   variance so replays do not look machine-perfect.
 - **Playback control** — 0.5×–10× speed, loop mode, stop-at-any-time.
@@ -46,11 +46,11 @@ This README describes v3.1.2 (`APP_VERSION` in `src/main.py`).
 | Driver | Support level |
 |---|---|
 | KDE Plasma Wayland | **100% — fully tested by the author (CachyOS): record, replay and clicks** |
-| Hyprland | Implemented, not tested by the author |
+| Hyprland | **Tested by the author: record, replay and clicks** |
 | GNOME Wayland | Implemented, not tested by the author |
-| X11 desktops (Cinnamon, MATE, XFCE…) | Tested by the author (KDE Plasma, X11 session) |
+| X11 desktops (Cinnamon, MATE, XFCE…) | **Tested by the author: record, replay and clicks** |
 
-Implemented capability matrix (the KDE Plasma Wayland and X11 columns are verified by the author):
+Implemented capability matrix (the Hyprland, KDE Plasma Wayland and X11 columns are tested by the author):
 
 | | X11 desktops | GNOME Wayland | Hyprland | KDE Wayland |
 |---|---|---|---|---|
