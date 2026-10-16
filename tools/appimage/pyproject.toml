@@ -17,7 +17,7 @@ dependencies = [
 linuxtask = "linuxtask_main:main"
 
 [tool.setuptools]
-py-modules = ["linuxtask_main", "recorder", "playback"]
+py-modules = ["linuxtask_main", "recorder", "playback", "cli"]
 packages = ["drivers"]
 
 [tool.appimage]

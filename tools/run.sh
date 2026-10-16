@@ -83,5 +83,6 @@ $PYTHON_BIN -c "import customtkinter, evdev, Xlib" 2>/dev/null || {
 }
 
 # 4. Run the application (.desktop entry calls this script, so the
-# menu shortcut follows the same interpreter choice).
-exec "$PYTHON_BIN" src/main.py
+# menu shortcut follows the same interpreter choice). Arguments are
+# forwarded: `./tools/run.sh play macro.json` uses the headless CLI.
+exec "$PYTHON_BIN" src/main.py "$@"

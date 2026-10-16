@@ -32,6 +32,8 @@ automation tools.
 - **Humanize mode** — optional ±2 px positional jitter and 0–3 % timing
   variance so replays do not look machine-perfect.
 - **Playback control** — 0.5×–10× speed, loop mode, stop-at-any-time.
+- **Headless CLI** — `play <macro.json>` replays a macro from a script
+  (`--speed`, `--loop`, `--humanize`) without opening a window.
 - **Portable macros** — a single JSON file holding the event timeline and the
   starting cursor position.
 - **Global hotkeys** — record and play from any window (F8/F9 by default,
@@ -97,6 +99,10 @@ desktops with a running X server fall back to the X11 driver.
   driver logs a WARNING (once per reason) and the app shows a one-time
   dialog; the event falls back to `uinput` when available, otherwise it is
   skipped.
+- **`src/cli.py` has an unreproduced crash.** One of 42 headless runs
+  exited with SIGSEGV (`-11`) instead of `0`. Thirty further runs with
+  `-X faulthandler` did not reproduce it and produced no traceback, so
+  whether it happens during or after replay is still unknown.
 
 ## Copy-paste in 30s
 
@@ -190,6 +196,68 @@ Hotkeys work globally: press F8 or F9 in any application. Recorded macros
 store the event timeline plus the starting cursor position, and playback
 returns the cursor there first so repeats are deterministic.
 
+## Headless CLI
+
+`play` replays a recorded macro without opening the window, so a script can
+drive input:
+
+```bash
+./tools/run.sh play macro.json --speed 2 --loop --humanize
+python src/cli.py play macro.json        # same, straight from the source tree
+linuxtask play macro.json                # AppImage / installed console script
+```
+
+| Flag | Effect |
+|---|---|
+| `--speed N` | Playback speed multiplier (default `1.0`; the GUI offers 0.5-10) |
+| `--start-pos X,Y` | Move the cursor to `X,Y` before replaying, overriding the macro's stored start position |
+| `--loop` | Keep replaying until `Ctrl+C` |
+| `--humanize` | Add +/-2 px jitter and 0-3 % timing variance |
+| `-v`, `--verbose` | Debug logging |
+
+`--start-pos` is what makes a *relative* macro repeatable: a relative macro
+only reproduces when it starts where it started before. It is also a safety
+net against drift.
+
+The file is the same JSON the GUI saves. A bad path or an unsupported
+desktop exits non-zero with a message on stderr instead of a traceback -
+`2` for an invalid macro, `1` for an unsupported desktop, `130` on `Ctrl+C`.
+The driver and the virtual `uinput` device are opened only *after* the file
+validates, so a typo cannot pop a portal authorization dialog. The CLI reuses
+`src/playback.py` verbatim - same replay code the toolbar runs.
+
+### Macro file format
+
+The file is plain JSON, so a script can generate or rewrite a macro instead of
+recording it in the GUI first:
+
+```json
+{
+  "start_pos": [400, 300],
+  "events": [
+    {"type": "pos",    "x": 400, "y": 300, "time": 0.0},
+    {"type": "rel",    "dx": 20, "dy": 0, "time": 0.1},
+    {"type": "scroll", "direction": "down", "clicks": 2, "time": 0.4},
+    {"type": "key",    "code": 272, "val": 1, "time": 0.6},
+    {"type": "key",    "code": 272, "val": 0, "time": 0.7}
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `start_pos` | Optional `[x, y]` the cursor is moved to before the events; `--start-pos` overrides it |
+| `time` | Seconds from the start of the pass; drives the pacing, and is divided by `--speed`. Required |
+| `pos` | Absolute move to `x`, `y` |
+| `rel` | Relative move by `dx`, `dy` |
+| `scroll` | `direction` is `up` or `down`; `clicks` defaults to `1` |
+| `key` | evdev `code` with `val`: `1` press, `0` release. `BTN_*` (272/273/274 = left/right/middle) go through the driver, keyboard codes through the virtual device |
+
+A bare JSON list is also accepted - legacy macros have no `start_pos`. Events
+that fail validation are dropped with a warning on stderr, and a file with no
+valid event exits `2`, so a malformed generated macro fails loudly instead of
+replaying half of itself.
+
 ## Security model
 
 Input capture only needs to *read* devices; it never writes to them. The
@@ -212,7 +280,7 @@ in other windows) and offers "Don't show again".
 
 ```bash
 # Hardware- and display-independent suites (the ones CI runs):
-python -m unittest tests.test_main_flow tests.test_jitter tests.test_coordinate_precision
+python -m unittest tests.test_main_flow tests.test_cli tests.test_jitter tests.test_coordinate_precision
 ```
 
 The command works from the repo root with no extra setup: each suite

@@ -10,6 +10,30 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Added
+- **Headless `play` CLI** (issue #5): scripts can now replay a saved macro
+  without the GUI - `linuxtask play macro.json [--speed N] [--loop]
+  [--humanize] [--start-pos X,Y]`, also reachable as
+  `./tools/run.sh play ...` and
+  `python src/cli.py play ...`. `src/cli.py` reuses
+  `Playback.playback_thread` verbatim, supplying the window-owned
+  attributes (speed/humanize variables, loop flag, UI queue) as plain
+  stand-ins, so the replay path is the same code the toolbar runs. The
+  macro file is validated with the same `_validate_event` as
+  `open_file`, and the compositor driver plus the uinput device are only
+  opened after it validates, so a bad path can never pop a portal dialog.
+  The README documents the macro JSON format, so a script can generate a
+  macro instead of recording one in the GUI first.
+  Exit codes: `2` invalid macro, `1` unsupported desktop, `130` on Ctrl+C.
+  `main.py` routes `play`/`-h`/`--help` to the CLI and everything else to
+  the GUI; the AppImage ships the module and its smoke guard imports it.
+
+### Known issues
+- **`src/cli.py` exited with SIGSEGV once in a 42-run batch** (exit code
+  `-11` instead of `0`). Not reproduced in 30 later runs under
+  `-X faulthandler`, which produced no traceback, so whether the crash is
+  during replay or at teardown is unknown.
+
 ## [v3.2.1] - 2026-10-10
 
 ### Fixed

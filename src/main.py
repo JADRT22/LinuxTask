@@ -521,11 +521,20 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         return name
 
 
-def main():
-    """Entry point (also used by the AppImage console script)."""
+def main(argv=None):
+    """Entry point (also used by the AppImage console script).
+
+    No arguments starts the GUI. `play <macro.json>` (and -h/--help) hands
+    off to the headless CLI in cli.py, so a script can replay a recorded
+    macro without opening a window (issue #5).
+    """
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] in ("play", "-h", "--help"):
+        from cli import main as cli_main
+        return cli_main(argv)
     app = LinuxTaskApp()
     app.mainloop()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

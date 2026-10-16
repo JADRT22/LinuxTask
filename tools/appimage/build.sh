@@ -45,6 +45,9 @@ cp "$REPO_ROOT/src/main.py" "$PROJ/linuxtask_main.py"
 # (ModuleNotFoundError: recorder).
 cp "$REPO_ROOT/src/recorder.py" "$PROJ/recorder.py"
 cp "$REPO_ROOT/src/playback.py" "$PROJ/playback.py"
+# cli.py backs the headless `play` subcommand (issue #5); main.py
+# imports it lazily, so it must ship next to linuxtask_main.py.
+cp "$REPO_ROOT/src/cli.py" "$PROJ/cli.py"
 cp "$REPO_ROOT/assets/icon.png" "$PROJ/"
 cp "$REPO_ROOT/tools/appimage/pyproject.toml" "$PROJ/"
 cp "$REPO_ROOT/tools/appimage/LinuxTask.desktop" "$PROJ/"
@@ -228,6 +231,7 @@ from gi.repository import GLib
 import recorder, playback
 import drivers.factory, drivers.sway, drivers.x11, drivers.gnome, drivers.hyprland
 import drivers.kde_wayland
+import cli
 import linuxtask_main
 print('ok', linuxtask_main.APP_VERSION)
 " > "$SMOKE_DIR/smoke.out" 2> "$SMOKE_DIR/smoke.err"; then
