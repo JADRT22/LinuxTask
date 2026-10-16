@@ -10,6 +10,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+## [v3.3.0] - 2026-10-16
+
 ### Added
 - **Headless `play` CLI** (issue #5): scripts can now replay a saved macro
   without the GUI - `linuxtask play macro.json [--speed N] [--loop]
@@ -500,7 +502,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 - **Movement-precision tests**: `test_jitter.py` added to cover movement
   precision with unit tests.
 
-[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.2.1...HEAD
+[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.3.0...HEAD
+[v3.3.0]: https://github.com/JADRT22/LinuxTask/compare/v3.2.1...v3.3.0
 [v3.2.1]: https://github.com/JADRT22/LinuxTask/compare/v3.2.0...v3.2.1
 [v3.2.0]: https://github.com/JADRT22/LinuxTask/compare/v3.1.2...v3.2.0
 [v3.1.2]: https://github.com/JADRT22/LinuxTask/compare/v3.1.1...v3.1.2
