@@ -2,7 +2,7 @@
 
 > 👤 More projects: [@JADRT22](https://github.com/JADRT22) — Hyprland automation • Roblox on Linux • MCP/agents
 
-**A minimalist macro recorder for Linux — record and replay keyboard + mouse macros. Drivers exist for KDE Plasma Wayland, Hyprland, Sway, GNOME Wayland and X11 (see Status below).**
+**A minimalist macro recorder for Linux — record and replay keyboard + mouse macros. Drivers exist for KDE Plasma Wayland, Hyprland, Sway, GNOME Wayland and X11 (see [Status](#status) below).**
 
 [![Release](https://img.shields.io/github/v/release/JADRT22/LinuxTask?style=flat-square)](https://github.com/JADRT22/LinuxTask/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/JADRT22/LinuxTask/python-app.yml?style=flat-square&label=tests)](https://github.com/JADRT22/LinuxTask/actions/workflows/python-app.yml)
@@ -17,6 +17,39 @@ injection restrictions that Wayland compositors impose on traditional X11
 automation tools.
 
 ![LinuxTask recording a terminal command and replaying it — KDE Wayland](assets/demo.gif)
+
+## Copy-paste in 30s
+
+```bash
+git clone https://github.com/JADRT22/LinuxTask.git && cd LinuxTask && ./tools/install.sh && ./tools/run.sh
+```
+
+Record with **F8**, replay with **F9** — global hotkeys work in any window.
+
+<p>
+<img src="assets/demo-v3.png" alt="The 400×44 px LinuxTask toolbar: Open, Save, record ●, play ▶, loop ↻, 1× speed and ⚙ settings" width="400">
+</p>
+
+> 🇧🇷 **Em Português:** LinuxTask é um gravador de macros para Linux — grava e reproduz teclado e mouse no Hyprland, Sway, GNOME Wayland, KDE Wayland e X11, com captura via `evdev` e reprodução por `uinput`/APIs do compositor. Instalação: `./tools/install.sh`, uso: `./tools/run.sh` (atalhos globais F8/F9).
+
+## Table of contents
+
+- [Features](#features)
+- [Status](#status)
+  - [Known limitations](#known-limitations)
+- [How it works](#how-it-works)
+- [Getting started](#getting-started)
+  - [Requirements](#requirements) · [Install](#install) · [Run](#run)
+- [Usage](#usage)
+- [Headless CLI](#headless-cli)
+  - [Macro file format](#macro-file-format)
+- [Security model](#security-model)
+- [Development](#development)
+  - [Tests](#tests) · [Release process](#release-process) · [AppImage](#appimage)
+- [Troubleshooting](#troubleshooting)
+- [FAQ](#faq)
+- [Uninstall](#uninstall)
+- [Contributing](#contributing)
 
 ## Features
 
@@ -79,7 +112,7 @@ desktops with a running X server fall back to the X11 driver.
 > device. When it is missing, the app logs a warning (`"... dropped ...
 > UInput unavailable"`) and that input is skipped during replay — keyboard
 > and scroll do not silently fall back to anything else. The installer
-> configures `/dev/uinput` access (see Requirements).
+> configures `/dev/uinput` access (see [Requirements](#requirements)).
 
 ### Known limitations
 
@@ -104,15 +137,8 @@ desktops with a running X server fall back to the X11 driver.
   `-X faulthandler` did not reproduce it and produced no traceback, so
   whether it happens during or after replay is still unknown.
 
-## Copy-paste in 30s
-
-```bash
-git clone https://github.com/JADRT22/LinuxTask.git && cd LinuxTask && ./tools/install.sh && ./tools/run.sh
-```
-
-Record with **F8**, replay with **F9** — global hotkeys work in any window.
-
-> 🇧🇷 **Em Português:** LinuxTask é um gravador de macros para Linux — grava e reproduz teclado e mouse no Hyprland, Sway, GNOME Wayland, KDE Wayland e X11, com captura via `evdev` e reprodução por `uinput`/APIs do compositor. Instalação: `./tools/install.sh`, uso: `./tools/run.sh` (atalhos globais F8/F9).
+Runtime fixes for dependency and permission problems live in
+[Troubleshooting](#troubleshooting).
 
 ## How it works
 
@@ -195,6 +221,9 @@ Or look for **LinuxTask** in your application menu.
 Hotkeys work globally: press F8 or F9 in any application. Recorded macros
 store the event timeline plus the starting cursor position, and playback
 returns the cursor there first so repeats are deterministic.
+
+To replay a macro from a script, cron job or CI, skip the window entirely:
+see [Headless CLI](#headless-cli) below.
 
 ## Headless CLI
 
@@ -279,20 +308,25 @@ in other windows) and offers "Don't show again".
 ### Tests
 
 ```bash
-# Hardware- and display-independent suites (the ones CI runs):
+# Hardware- and display-independent suites (headless, no display needed):
 python -m unittest tests.test_main_flow tests.test_cli tests.test_jitter tests.test_coordinate_precision
 ```
 
-The command works from the repo root with no extra setup: each suite
+The command works from the repo root with no extra setup as long as
+`evdev` and `customtkinter` are importable (the project `.venv` created
+by `tools/install.sh` has them: `.venv/bin/python -m unittest ...`): each suite
 prepends `src/` to `sys.path` internally (alternatively, run with
 `PYTHONPATH=src`). The core flow suite exercises recording, playback
 dispatch, macro validation and persistence headlessly by instantiating
-the app without a display. `tests/test_x11_driver.py` and
-`tests/test_hyprland_driver.py` additionally mock or exercise drivers
-individually (run manually); `.quarantine/tests/test_evdev_access.py` needs real
-hardware and `tests/test_experimental_addons.py` needs numpy/Pillow plus
-a session, so neither runs in CI (see `.github/workflows/python-app.yml`
-for the exact CI list).
+the app without a display. CI runs that command plus six more suites
+(individually: `tests.test_x11_driver`, `tests.test_hyprland_driver`,
+`tests.test_sway_driver`, `tests.test_driver_factory`,
+`tests.test_input_devices`, `tests.test_appimage_smoke_coverage` —
+see `.github/workflows/python-app.yml` for the exact list).
+Two suites never run in CI:
+`.quarantine/tests/test_evdev_access.py` needs real hardware and
+`tests/test_experimental_addons.py` needs numpy/Pillow plus a live
+session — run them manually when touching those areas.
 
 `tests/test_appimage_smoke_coverage.py` reads
 `tools/appimage/build.sh` and fails when a driver module under
@@ -383,6 +417,36 @@ pip3 uninstall -y customtkinter evdev python-xlib
 Note: the temporary ACLs on `/dev/uinput` and `/dev/input/event*`
 disappear on reboot (`/dev` is in-memory); removing the udev rule is
 what makes the change permanent.
+
+## FAQ
+
+**Does LinuxTask capture passwords?**
+Only while a recording is on — recording reads *every* key pressed in
+*any* window, including passwords typed outside the app. Before the
+first recording ever starts, LinuxTask shows a warning about exactly
+this and offers "Don't show again". Replayed macros contain only what
+was recorded into the macro file; nothing is written outside it (see
+[Security model](#security-model)).
+
+**Will a macro recorded on one desktop replay on another?**
+Yes — the macro is a plain JSON timeline, so it carries over. One
+caveat: on [Sway](#status) and GNOME Wayland the compositor cannot
+report the absolute cursor position, so macros recorded there store
+*relative* deltas; a relative macro only repeats reliably when it
+starts where it started before. `play --start-pos X,Y` pins that start
+point (see [Headless CLI](#headless-cli)).
+
+**Can a script drive playback without the GUI?**
+Yes. `play macro.json` replays any saved macro headlessly, with
+`--speed`, `--loop`, `--humanize` and `--start-pos`, and the macro
+format is documented JSON that a script can also *generate* instead of
+recording it in the GUI (see [Macro file format](#macro-file-format)).
+
+**Does it work on GNOME or KDE running X11?**
+Yes. When the session type is `x11`, the GNOME and KDE branches of the
+auto-detection use the X11 (XTest) driver directly, like any other
+X11-based desktop — all Wayland-specific requirements apply only on
+Wayland sessions.
 
 ## Contributing
 
