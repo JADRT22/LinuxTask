@@ -141,9 +141,10 @@ more: `tests.test_x11_driver`, `tests.test_hyprland_driver`,
   a display.
 - The per-driver suites (`test_x11_driver`, `test_hyprland_driver`,
   `test_sway_driver`) mock or exercise each driver individually.
-- Two suites never run in CI:
+- Three suites never run in CI:
   `.quarantine/tests/test_evdev_access.py` (quarantined manual hardware
-  check) and `tests/test_experimental_addons.py` (needs numpy/Pillow
+  check), `tests/test_kde_wayland.py` (needs the distro `python-dbus`
+  bindings) and `tests/test_experimental_addons.py` (needs numpy/Pillow
   plus a live session) — run them manually when touching those areas.
 - Add or update tests with behavior changes. A bug fix without a
   regression test will be asked to include one.

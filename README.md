@@ -104,9 +104,9 @@ desktops with a running X server fall back to the X11 driver.
 > **Sway records relative motion.** The sway IPC can *warp* the cursor
 > (`seat <seat> cursor set <x> <y>`, used at playback to honour a macro's
 > `start_pos` and `pos` events) but it cannot *read* the position back — there
-> is no equivalent of `get_seats` cursor data. So Sway records `rel` deltas
-> like the GNOME driver, and macros recorded elsewhere still replay there
-> through the uinput fallback. See [issue #4](https://github.com/JADRT22/LinuxTask/issues/4).
+> is no equivalent of `get_seats` cursor data. So Sway records `rel` deltas,
+> and macros recorded elsewhere still replay there through the uinput
+> fallback. See [issue #4](https://github.com/JADRT22/LinuxTask/issues/4).
 
 > **Note:** every cell marked `(uinput)` above needs a working `/dev/uinput`
 > device. When it is missing, the app logs a warning (`"... dropped ...
@@ -323,9 +323,10 @@ the app without a display. CI runs that command plus six more suites
 `tests.test_sway_driver`, `tests.test_driver_factory`,
 `tests.test_input_devices`, `tests.test_appimage_smoke_coverage` —
 see `.github/workflows/python-app.yml` for the exact list).
-Two suites never run in CI:
-`.quarantine/tests/test_evdev_access.py` needs real hardware and
-`tests/test_experimental_addons.py` needs numpy/Pillow plus a live
+Three suites never run in CI:
+`.quarantine/tests/test_evdev_access.py` needs real hardware,
+`tests/test_kde_wayland.py` needs the distro `python-dbus` bindings
+and `tests/test_experimental_addons.py` needs numpy/Pillow plus a live
 session — run them manually when touching those areas.
 
 `tests/test_appimage_smoke_coverage.py` reads
@@ -430,11 +431,13 @@ was recorded into the macro file; nothing is written outside it (see
 
 **Will a macro recorded on one desktop replay on another?**
 Yes — the macro is a plain JSON timeline, so it carries over. One
-caveat: on [Sway](#status) and GNOME Wayland the compositor cannot
-report the absolute cursor position, so macros recorded there store
-*relative* deltas; a relative macro only repeats reliably when it
-starts where it started before. `play --start-pos X,Y` pins that start
-point (see [Headless CLI](#headless-cli)).
+caveat: on [Sway](#status) the compositor cannot report the absolute
+cursor position, so macros recorded there store *relative* deltas; a
+relative macro only repeats reliably when it starts where it started
+before. GNOME Wayland has the same limitation, but its driver is
+implemented and untested by the author — treat recordings made there as
+unverified (see [Status](#status)). `play --start-pos X,Y` pins that
+start point (see [Headless CLI](#headless-cli)).
 
 **Can a script drive playback without the GUI?**
 Yes. `play macro.json` replays any saved macro headlessly, with
