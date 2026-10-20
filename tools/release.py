@@ -42,24 +42,20 @@ def get_current_version():
     if not os.path.exists(MAIN_PY_PATH):
         print(f"Error: {MAIN_PY_PATH} not found.")
         sys.exit(1)
-    
     with open(MAIN_PY_PATH, 'r') as f:
         content = f.read()
         match = APP_VERSION_RE.search(content)
         if match:
             return match.group(1)
-    
     print("Error: Could not find APP_VERSION constant in src/main.py.")
     sys.exit(1)
 
 def bump_version(current_version, bump_type):
     """Calculate the next version based on semantic versioning."""
     parts = list(map(int, current_version.split('.')))
-    
     # Ensure we have at least 3 parts for full semver, but handle X.Y as well
     while len(parts) < 3:
         parts.append(0)
-    
     if bump_type == 'major':
         parts[0] += 1
         parts[1] = 0
@@ -69,7 +65,6 @@ def bump_version(current_version, bump_type):
         parts[2] = 0
     elif bump_type == 'patch':
         parts[2] += 1
-    
     return '.'.join(map(str, parts))
 
 def update_source_version(new_version):
@@ -77,18 +72,15 @@ def update_source_version(new_version):
     tools/appimage/pyproject.toml so AppImage builds don't drift."""
     with open(MAIN_PY_PATH, 'r') as f:
         content = f.read()
-    
     new_content, n = APP_VERSION_RE.subn(
         f'APP_VERSION = "{new_version}"', content
     )
     if n == 0:
         print("Error: APP_VERSION constant not found in src/main.py; nothing updated.")
         sys.exit(1)
-    
     with open(MAIN_PY_PATH, 'w') as f:
         f.write(new_content)
     print(f"Updated {MAIN_PY_PATH} to version {new_version}")
-    
     if os.path.exists(PYPROJECT_PATH):
         with open(PYPROJECT_PATH, 'r') as f:
             pp = f.read()
@@ -474,7 +466,6 @@ def get_highest_tag():
             parts = list(map(int, v_str.split('.')))
             while len(parts) < 3: parts.append(0)
             versions.append(tuple(parts))
-    
     if not versions: return (0, 0, 0)
     return max(versions)
 
@@ -488,40 +479,29 @@ def main():
         "--dry-run", action="store_true",
         help="Simulate the release process without making changes."
     )
-    
     args = parser.parse_args()
-    
     if not args.dry_run and is_dirty():
         print("Error: Git worktree is dirty. Please commit or stash changes before release.")
         sys.exit(1)
-    
     print("--- Starting LinuxTask Release Process ---")
-    
     code_version = get_current_version()
     print(f"Current version in code: v{code_version}")
-    
     highest_tag = '.'.join(map(str, get_highest_tag()))
     print(f"Highest tag detected: v{highest_tag}")
-    
     # Use the highest of code vs tag as base
     parts_code = list(map(int, code_version.split('.')))
     while len(parts_code) < 3: parts_code.append(0)
     parts_tag = list(map(int, highest_tag.split('.')))
     while len(parts_tag) < 3: parts_tag.append(0)
-    
     base_version = code_version
     if tuple(parts_tag) > tuple(parts_code):
         print(f"Warning: Code version v{code_version} is behind highest tag v{highest_tag}.")
         base_version = highest_tag
-    
     new_version = bump_version(base_version, args.bump)
     print(f"New version will be: v{new_version}")
-    
     commits = get_commits_since_last_tag()
     print(f"Found {len(commits)} commits since last tag.")
-    
     changelog_entry = format_changelog_entry(new_version, commits)
-    
     if args.dry_run:
         print("\n--- DRY RUN: Changelog entry as it will be published ---")
         try:
@@ -554,10 +534,8 @@ def main():
 
     # Phase 1: Update source
     update_source_version(new_version)
-    
     # Phase 2: Update changelog
     update_changelog_file(changelog_entry)
-    
     # Phase 3: Git operations
     print("Staging changes...")
     run_command(["git", "add", "src/main.py", "tools/appimage/pyproject.toml",
@@ -566,7 +544,6 @@ def main():
     run_command(["git", "commit", "-m", f"chore: release v{new_version}"])
     print(f"Tagging release v{new_version}...")
     run_command(["git", "tag", "-a", f"v{new_version}", "-m", f"Release v{new_version}"])
-    
     print(f"\n✅ Release v{new_version} completed successfully!")
     print("Don't forget to push: git push origin main --tags")
 

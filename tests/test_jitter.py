@@ -13,7 +13,6 @@ import unittest
 def apply_jitter(x, y, enabled=True):
     if not enabled:
         return x, y
-    
     # Logic copied from main.py
     new_x = x + random.randint(-2, 2)
     new_y = y + random.randint(-2, 2)
@@ -23,13 +22,10 @@ class TestMacroJitter(unittest.TestCase):
     def test_jitter_bounds(self):
         """Verify that jitter does not deviate more than +-2px"""
         original_x, original_y = 100, 100
-        
         for _ in range(100): # Test 100 times
             jx, jy = apply_jitter(original_x, original_y, enabled=True)
-            
             delta_x = abs(jx - original_x)
             delta_y = abs(jy - original_y)
-            
             self.assertLessEqual(delta_x, 2, f"X deviation too high: {delta_x}")
             self.assertLessEqual(delta_y, 2, f"Y deviation too high: {delta_y}")
 

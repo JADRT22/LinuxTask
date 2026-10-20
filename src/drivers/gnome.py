@@ -156,13 +156,11 @@ class GnomeDriver(DesktopManager):
                 return int(parts['x']), int(parts['y'])
             except Exception as exc:
                 logger.debug("get_cursor_pos (xdotool) failed: %s", exc)
-        
         try:
             import tkinter as tk
             if self._tk_instance is None:
                 self._tk_instance = tk.Tk()
                 self._tk_instance.withdraw()  # Hide the window
-            
             # Update must be called to get fresh coordinates in some environments
             self._tk_instance.update()
             x, y = self._tk_instance.winfo_pointerx(), self._tk_instance.winfo_pointery()

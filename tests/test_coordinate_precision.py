@@ -62,7 +62,7 @@ class TestCoordinatePrecision(unittest.TestCase):
 
     def test_clamping_logic(self):
         """Verify that coordinates logic can be tested in CI."""
-        # This is a placeholder test for logic that doesn't require a real display
+        # Runs without a real display: only setup values are asserted here.
         self.assertEqual(self.driver.screen_width, 1920)
         self.assertEqual(self.driver.screen_height, 1080)
         # Daemon start path still exercised, only the spawn is mocked.
