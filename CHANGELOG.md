@@ -10,6 +10,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+## [v3.4.0] - 2026-10-24
+
 ### Added
 - **GNOME Wayland absolute mode** via a GNOME Shell cursor-bridge
   extension (`extensions/gnome-shell/linuxtask-cursorbridge@jadrt22`):
@@ -522,7 +524,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 - **Movement-precision tests**: `test_jitter.py` added to cover movement
   precision with unit tests.
 
-[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.4.0...HEAD
+[v3.4.0]: https://github.com/JADRT22/LinuxTask/compare/v3.3.0...v3.4.0
 [v3.3.0]: https://github.com/JADRT22/LinuxTask/compare/v3.2.1...v3.3.0
 [v3.2.1]: https://github.com/JADRT22/LinuxTask/compare/v3.2.0...v3.2.1
 [v3.2.0]: https://github.com/JADRT22/LinuxTask/compare/v3.1.2...v3.2.0

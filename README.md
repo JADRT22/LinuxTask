@@ -76,7 +76,7 @@ Record with **F8**, replay with **F9** — global hotkeys work in any window.
 
 ## Status
 
-This README describes v3.3.0 (`APP_VERSION` in `src/main.py`).
+This README describes v3.4.0 (`APP_VERSION` in `src/main.py`).
 
 | Driver | Support level |
 |---|---|
