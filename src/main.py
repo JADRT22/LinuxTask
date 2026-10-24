@@ -166,11 +166,15 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         # _poll_hotkeys(). Never call tkinter methods (after/configure)
         # directly from listener/playback threads.
         self._ui_queue = queue.Queue()
-        # KDE portal driver reports skipped input through warn_fn; push it
-        # on the same worker-safe queue (_poll_hotkeys shows it once).
+        # KDE portal driver reports skipped input through warn_fn; the
+        # GNOME driver warns when the cursor bridge is absent so the
+        # delta fallback is expected. The callback stores the actual
+        # message on the manager (thread-safe simple attribute write)
+        # and pushes the same worker-safe queue token; _poll_hotkeys
+        # shows the driver's own text instead of a desktop-specific
+        # hard-coded one.
         if hasattr(self.manager, "warn_fn"):
-            self.manager.warn_fn = (
-                lambda _msg: self._ui_queue.put("driver_warning"))
+            self.manager.warn_fn = self._driver_warn_fn
         self.app_config = self._load_app_config()
         self.start_cursor_pos = None
         self.init_uinput()
@@ -234,6 +238,12 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
             target=self.global_hardware_listener, daemon=True
         ).start()
 
+    def _driver_warn_fn(self, msg):
+        """Runs on driver threads: stores the real warning text and queues
+        the one-time UI notice for _poll_hotkeys."""
+        self.manager.driver_warning_detail = msg
+        self._ui_queue.put("driver_warning")
+
     def _poll_hotkeys(self):
         """Runs on the UI thread: consumes actions queued by workers."""
         try:
@@ -250,15 +260,25 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
                         self.__dict__["_driver_warning_shown"] = True
                         try:
                             import tkinter.messagebox as mb
+                            detail = getattr(
+                                self.manager, "driver_warning_detail", None)
+                            if detail:
+                                message = (
+                                    "The desktop driver reported a "
+                                    "problem:\n\n" + detail +
+                                    "\n\nDetails are in the log.")
+                            else:
+                                message = (
+                                    "The desktop driver could not replay "
+                                    "part of the macro (portal not ready "
+                                    "or the call failed).\n\nInput fell "
+                                    "back to the virtual uinput device "
+                                    "when possible, otherwise it was "
+                                    "skipped.\n\nOn KDE Wayland, approve "
+                                    "the portal dialog on first run. "
+                                    "Details are in the log.")
                             mb.showwarning(
-                                "LinuxTask - Driver warning",
-                                "The desktop driver could not replay part of "
-                                "the macro (portal not ready or the call "
-                                "failed).\n\nInput fell back to the virtual "
-                                "uinput device when possible, otherwise it "
-                                "was skipped.\n\nOn KDE Wayland, approve the "
-                                "portal dialog on first run. Details are in "
-                                "the log.")
+                                "LinuxTask - Driver warning", message)
                         except Exception:
                             logger.debug(
                                 "Failed to show driver warning dialog.",

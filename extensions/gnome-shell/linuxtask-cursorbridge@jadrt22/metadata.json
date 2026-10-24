@@ -1,0 +1,7 @@
+{
+    "uuid": "linuxtask-cursorbridge@jadrt22",
+    "name": "LinuxTask Cursor Bridge",
+    "description": "D-Bus bridge that gives LinuxTask the compositor's real pointer position (global.get_pointer) and absolute cursor warping (seat.warp_pointer) on GNOME Wayland. Absolute macro recording/replay on GNOME depends on it; without it the GNOME driver falls back to relative deltas and xdotool.",
+    "url": "https://github.com/JADRT22/LinuxTask",
+    "shell-version": ["45", "46", "47", "48", "49", "50"]
+}

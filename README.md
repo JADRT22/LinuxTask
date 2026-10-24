@@ -82,7 +82,7 @@ This README describes v3.3.0 (`APP_VERSION` in `src/main.py`).
 |---|---|
 | KDE Plasma Wayland | **100% — fully tested by the author (CachyOS): record, replay and clicks** |
 | Hyprland | **Tested by the author: record, replay and clicks** |
-| GNOME Wayland | Implemented, not tested by the author |
+| GNOME Wayland | Implemented, not tested by the author — absolute mode needs the [cursor-bridge extension](#gnome-wayland-absolute-mode) |
 | X11 desktops (Cinnamon, MATE, XFCE…) | **Tested by the author: record, replay and clicks** |
 | Sway | **Tested by the author (headless 1.12): cursor warp, relative move, buttons and scroll via seat IPC** |
 
@@ -90,9 +90,9 @@ Implemented capability matrix (the Hyprland, KDE Plasma Wayland, Sway and X11 co
 
 | | X11 desktops | GNOME Wayland | Hyprland | KDE Wayland | Sway |
 |---|---|---|---|---|---|
-| **Driver** | `python-xlib` (XTest) | `ydotool` | `hyprctl` | XDG Portal (RemoteDesktop) | `swaymsg` (seat IPC) |
+| **Driver** | `python-xlib` (XTest) | `ydotool` + cursor-bridge ext. | `hyprctl` | XDG Portal (RemoteDesktop) | `swaymsg` (seat IPC) |
 | Mouse click | ✅ | ✅ | ✅ (uinput) | ✅ (evdev button codes via the portal) | ✅ (`cursor press/release`) |
-| Absolute move | ✅ | ❌ (emulated by deltas) | ✅ | ✅ (true position read from KWin, exact) | ⚠️ warp only — absolute *recording* is impossible (see below) |
+| Absolute move | ✅ | ✅ with the cursor-bridge extension, ❌ (emulated by deltas) without it | ✅ | ✅ (true position read from KWin, exact) | ⚠️ warp only — absolute *recording* is impossible (see below) |
 | Relative move | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Scroll | ✅ | ✅ | ✅ (uinput) | ✅ | ✅ (`button4`/`button5`) |
 | Keyboard | ✅ (uinput) | ✅ (uinput) | ✅ (uinput) | ✅ | ✅ (uinput) |
@@ -114,6 +114,43 @@ desktops with a running X server fall back to the X11 driver.
 > and scroll do not silently fall back to anything else. The installer
 > configures `/dev/uinput` access (see [Requirements](#requirements)).
 
+### GNOME Wayland absolute mode
+
+GNOME compositors do not publish the pointer position to clients, so a
+traditional recorder cannot read the real cursor location (xdotool only
+sees XWayland surfaces). LinuxTask solves this the same way its KDE
+driver uses KWin scripting: a small **GNOME Shell extension** running
+inside the shell exposes the pointer over D-Bus:
+
+- `org.linuxtask.cursorbridge` / `/org/linuxtask/CursorBridge`, with
+  `GetPointer()` (`global.get_pointer()`), `WarpPoint(x, y)`
+  (`seat.warp_pointer()` — real absolute replay, no uinput) and
+  `GetScreenSize()` (exact resolution, replacing the xrandr/mutter
+  parsing).
+
+The extension lives in `extensions/gnome-shell/` (GNOME 45+):
+
+```bash
+./tools/install-gnome-bridge.sh
+```
+
+Copy-install, enable, then **log out and back in once** — GNOME Shell
+only picks up new extension files when the shell restarts. After that
+it stays enabled and the driver starts with `supports_absolute_positioning`:
+
+```bash
+gdbus call --session --dest org.freedesktop.DBus \
+  --object-path /org/freedesktop/DBus \
+  --method org.freedesktop.DBus.NameHasOwner \
+  org.linuxtask.cursorbridge   # must print '(true)'
+```
+
+Without the extension (or when it degrades), the driver keeps its
+legacy behavior: relative deltas for playback, xdotool/tkinter for the
+cursor read — the app shows a one-time dialog when it does. The
+extension is silent on the lock screen (shell session mode), where
+reads degrade to the fallback chain.
+
 ### Known limitations
 
 - **KDE Plasma Wayland** needs `python3-dbus` and `python3-gi` from your
@@ -132,6 +169,10 @@ desktops with a running X server fall back to the X11 driver.
   driver logs a WARNING (once per reason) and the app shows a one-time
   dialog; the event falls back to `uinput` when available, otherwise it is
   skipped.
+- **GNOME Wayland absolute mode** needs the cursor-bridge extension
+  above (one-time logout/login on install). `python3-dbus` is optional
+  for GNOME: when importable the bridge is called in-process, otherwise
+  each call is a short-lived `gdbus` subprocess.
 - **`src/cli.py` has an unreproduced crash.** One of 42 headless runs
   exited with SIGSEGV (`-11`) instead of `0`. Thirty further runs with
   `-X faulthandler` did not reproduce it and produced no traceback, so
@@ -175,7 +216,10 @@ graph TD
 - `evdev`, `customtkinter`, `python-xlib` (installed by the setup script into
   the project venv at the pinned versions; the distro `python3-evdev` is only
   a fallback for the system Python)
-- **GNOME Wayland only**: a running `ydotoold` daemon
+- **GNOME Wayland only**: a running `ydotoold` daemon; the
+  [cursor-bridge extension](#gnome-wayland-absolute-mode) for absolute
+  mode (`python3-dbus` optional — used in-process when present, `gdbus`
+  otherwise)
 - **KDE Wayland only**: `python3-dbus` and `python3-gi` from your distro
   repositories (they cannot be built from PyPI without C headers)
 - **Sway only**: `swaymsg` in `PATH` (ships with `sway`/`swayfx`)
@@ -309,7 +353,7 @@ in other windows) and offers "Don't show again".
 
 ```bash
 # Hardware- and display-independent suites (headless, no display needed):
-python -m unittest tests.test_main_flow tests.test_cli tests.test_jitter tests.test_coordinate_precision
+python -m unittest tests.test_main_flow tests.test_cli tests.test_jitter tests.test_coordinate_precision tests.test_gnome_driver
 ```
 
 The command works from the repo root with no extra setup as long as
@@ -373,6 +417,7 @@ original glyph labels; the GUI is otherwise identical.
 | Cursor does not move | Check the driver's external dependency: `ydotool` daemon running (GNOME Wayland), `hyprctl` in `PATH` (Hyprland), `swaymsg` in `PATH` (Sway), portal permission granted (KDE Wayland) |
 | Hotkeys do not fire | Verify the `input` group: `groups $USER` — re-login after being added |
 | Missing dependency dialog | Follow the printed instructions (`python-xlib` via pip; `python3-dbus`/`python3-gi` via your package manager) |
+| GNOME: macros drift / "Absolute move emulated by relative delta" dialog | Install the cursor-bridge extension: `./tools/install-gnome-bridge.sh`, then log out and back in once. Check with the `gdbus NameHasOwner` call in [GNOME Wayland absolute mode](#gnome-wayland-absolute-mode) |
 
 ## Uninstall
 
@@ -434,10 +479,10 @@ Yes — the macro is a plain JSON timeline, so it carries over. One
 caveat: on [Sway](#status) the compositor cannot report the absolute
 cursor position, so macros recorded there store *relative* deltas; a
 relative macro only repeats reliably when it starts where it started
-before. GNOME Wayland has the same limitation, but its driver is
-implemented and untested by the author — treat recordings made there as
-unverified (see [Status](#status)). `play --start-pos X,Y` pins that
-start point (see [Headless CLI](#headless-cli)).
+before. GNOME Wayland without the cursor-bridge extension has the same
+limitation — installing it (`tools/install-gnome-bridge.sh`) switches
+recording to real absolute coordinates; `play --start-pos X,Y` pins
+that start point either way (see [Headless CLI](#headless-cli)).
 
 **Can a script drive playback without the GUI?**
 Yes. `play macro.json` replays any saved macro headlessly, with

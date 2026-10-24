@@ -77,6 +77,29 @@ else
     echo "[WARN] Desktop entry $DESKTOP_FILE not found; skipping (already removed)."
 fi
 
+# 2b. Disable and remove the GNOME Shell cursor-bridge extension
+#     (tools/install-gnome-bridge.sh installs it per-user, so no root needed).
+EXT_ID="linuxtask-cursorbridge@jadrt22"
+EXT_DIR="${XDG_DATA_HOME:-$USER_HOME/.local/share}/gnome-shell/extensions/$EXT_ID"
+if [ -e "$EXT_DIR" ]; then
+    # Run as the real user: gnome-extensions talks to the session bus.
+    if command -v gnome-extensions >/dev/null 2>&1; then
+        runuser_or_sudo() {
+            if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ]; then
+                sudo -u "$SUDO_USER" gnome-extensions disable "$EXT_ID" 2>/dev/null || true
+            else
+                gnome-extensions disable "$EXT_ID" 2>/dev/null || true
+            fi
+        }
+        runuser_or_sudo
+    fi
+    echo "[INFO] Removing cursor-bridge extension $EXT_DIR..."
+    rm -rf "$EXT_DIR" \
+        || echo "[WARN] Could not remove $EXT_DIR; delete it by hand (takes effect after the next logout)."
+else
+    echo "[INFO] Cursor-bridge extension not installed; skipping."
+fi
+
 # 3. Drop the user from the 'input' group (asks first; --yes skips).
 if id -nG "$REAL_USER" 2>/dev/null | tr ' ' '\n' | grep -qx input; then
     REMOVE_GROUP="no"

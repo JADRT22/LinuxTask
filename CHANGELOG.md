@@ -10,6 +10,26 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Added
+- **GNOME Wayland absolute mode** via a GNOME Shell cursor-bridge
+  extension (`extensions/gnome-shell/linuxtask-cursorbridge@jadrt22`):
+  `global.get_pointer()` for the real pointer position and
+  `seat.warp_pointer()` for true absolute replay — the same pattern the
+  KDE driver uses with KWin scripting, and the same one Keymasq/PaperWM
+  use. Install with `tools/install-gnome-bridge.sh` (one logout/login on
+  first install); `tools/uninstall.sh` removes it. The GNOME driver
+  prefers the bridge for `get_cursor_pos()`, `move_cursor()` and exact
+  `GetScreenSize()` resolution, degrades to the legacy relative-delta +
+  xdotool/tkinter fallback when it is absent or dead (same escalate/skip
+  rule as the KWin probe), and `python-dbus` stays optional for GNOME —
+  calls go in-process when it is importable, short-lived `gdbus`
+  subprocesses otherwise. New headless suite `tests/test_gnome_driver.py`
+  joins CI.
+- The one-time "Driver warning" dialog now shows the driver's own
+  message (`warn_fn` no longer discards it) instead of the
+  KDE-portal-specific hard-coded text, so the GNOME delta-fallback and
+  bridge-degrade warnings are described correctly.
+
 ## [v3.3.0] - 2026-10-16
 
 ### Added
