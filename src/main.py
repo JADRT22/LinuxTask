@@ -63,6 +63,16 @@ RECORDING_TOOLTIP_TEXT = (
     "RECORDING - every key, including passwords, is being captured."
 )
 
+# Adwaita-inspired neutral chrome for the dark UI (the app is always dark
+# mode). Semantic state colors (record red / play green / loop blue /
+# mapping orange) stay untouched: these literals only restyle the neutral
+# surfaces so the toolbar reads like a GNOME headerbar.
+UI_WINDOW_BG = "#303030"        # Adwaita dark window background
+UI_NEUTRAL = "#3a3a3a"          # neutral button fill
+UI_NEUTRAL_HOVER = "#4a4a4a"    # hover overlay (~+6% white, like Adwaita)
+UI_NEUTRAL_BORDER = "#4f4f4f"   # discreet 1px outline
+UI_DROPDOWN_BG = "#363636"      # option-menu popup background
+
 
 class ToolTip:
     """Minimal hover tooltip (customtkinter has no built-in one).
@@ -91,7 +101,7 @@ class ToolTip:
             label = tkinter.Label(
                 tip, text=self.text, background="#222222",
                 foreground="white", relief="solid", borderwidth=1,
-                font=("Arial", 9), padx=6, pady=2,
+                font=("DejaVu Sans", 9), padx=6, pady=2,
             )
             label.pack()
         except Exception:
@@ -135,6 +145,9 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         self.geometry("400x44")
         self.attributes("-topmost", True)
         self.resizable(False, False)
+        # Explicit neutral background (Adwaita dark) instead of CTk's
+        # default gray14, so buttons and hover overlays sit on one base.
+        self.configure(fg_color=UI_WINDOW_BG)
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
@@ -187,17 +200,20 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
             # color-bitmap emoji (e.g. Noto Color Emoji) -- buttons show
             # up as pixelated tofu boxes. All glyphs below are covered
             # by DejaVu Sans, which ships with virtually every distro.
-            "font": ("DejaVu Sans", 14), "corner_radius": 5
+            "font": ("DejaVu Sans", 14), "corner_radius": 6,
+            # Discreet 1px outline on every toolbar button (Adwaita style),
+            # including the red/green state buttons.
+            "border_width": 1, "border_color": UI_NEUTRAL_BORDER
         }
 
         # Define buttons in a list for DRY creation
         # (text, tooltip, fg, hover, command)
         buttons_cfg = [
-            ("Open", "Open macro", "#333333", "#444444", self.open_file),
-            ("Save", "Save macro", "#333333", "#444444", self.save_file),
+            ("Open", "Open macro", UI_NEUTRAL, UI_NEUTRAL_HOVER, self.open_file),
+            ("Save", "Save macro", UI_NEUTRAL, UI_NEUTRAL_HOVER, self.save_file),
             ("●", "Record (F8)", "#d32f2f", "#b71c1c", self.toggle_record),
             ("▶", "Play / Stop (F9)", "#388e3c", "#1b5e20", self.handle_play_key),
-            ("↻", "Loop playback", "#333333", "#444444", self.toggle_loop)
+            ("↻", "Loop playback", UI_NEUTRAL, UI_NEUTRAL_HOVER, self.toggle_loop)
         ]
 
         self.btns = []
@@ -214,19 +230,30 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         self.btn_rec = self.btns[2]
         self.btn_play = self.btns[3]
         self.btn_loop = self.btns[4]
-        # Text labels need a smaller font to fit the 32px buttons.
-        self.btns[0].configure(font=("DejaVu Sans", 10))
-        self.btns[1].configure(font=("DejaVu Sans", 10))
+        # "Open"/"Save" are wider than the 32px icon buttons (DejaVu Sans 10
+        # measures "Open" at 34px), so these two get width=40 to keep the
+        # label fully inside the 1px outline instead of touching it.
+        self.btns[0].configure(font=("DejaVu Sans", 10), width=40)
+        self.btns[1].configure(font=("DejaVu Sans", 10), width=40)
 
         self.speed_var = ctk.StringVar(value="1x")
+        # Neutral Adwaita-style drop-down: flat gray fill (was the CTk blue
+        # theme), matching hover state and a slightly lighter popup.
+        # Height 28 keeps the row rhythm closer to the 32px buttons.
         self.speed_menu = ctk.CTkOptionMenu(
             self, values=["0.5x", "1x", "2x", "4x", "10x"],
-            variable=self.speed_var, width=56, height=24, font=("Arial", 10)
+            variable=self.speed_var, width=56, height=28,
+            font=("DejaVu Sans", 10),
+            fg_color=UI_NEUTRAL, button_color=UI_NEUTRAL,
+            button_hover_color=UI_NEUTRAL_HOVER,
+            dropdown_fg_color=UI_DROPDOWN_BG,
+            dropdown_hover_color=UI_NEUTRAL_HOVER,
         )
         self.speed_menu.grid(row=0, column=5, padx=2, pady=2)
 
         self.btn_settings = ctk.CTkButton(
-            self, text="⚙", fg_color="transparent", hover_color="#222222",
+            self, text="⚙", fg_color="transparent",
+            hover_color=UI_NEUTRAL_HOVER,
             width=26, font=("DejaVu Sans", 14), command=self.open_settings
         )
         self.btn_settings.grid(row=0, column=6, padx=2, pady=2)
@@ -334,14 +361,17 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         self.settings_win.title("Settings")
         self.settings_win.geometry("300x250")
         self.settings_win.attributes("-topmost", True)
+        # Same neutral background as the main window; the frame stays flat
+        # (no dark card), like modern GNOME preference pages.
+        self.settings_win.configure(fg_color=UI_WINDOW_BG)
         self.settings_win.protocol("WM_DELETE_WINDOW", self._close_settings)
         self.settings_frame = ctk.CTkFrame(
-            self.settings_win
+            self.settings_win, fg_color=UI_WINDOW_BG
         )
         self.settings_frame.pack(fill="both", expand=True)
         ctk.CTkLabel(
             self.settings_frame, text="Global Hotkeys",
-            font=("Arial", 14, "bold")
+            font=("DejaVu Sans", 14, "bold")
         ).pack(pady=10)
         self.lbl_rec = ctk.CTkButton(
             self.settings_frame,
@@ -375,7 +405,7 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         self.btn_loop.configure(
             # Loop state is shown by color (blue = on), so one glyph suffices.
             text="↻",
-            fg_color="#1976d2" if self.loop_enabled else "#333333"
+            fg_color="#1976d2" if self.loop_enabled else UI_NEUTRAL
         )
 
     def _config_path(self):
@@ -435,7 +465,7 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
 
             ctk.CTkLabel(
                 dlg, text=PASSWORD_WARNING_TEXT, wraplength=320,
-                font=("Arial", 12),
+                font=("DejaVu Sans", 12),
             ).pack(padx=16, pady=(16, 8))
             ctk.CTkCheckBox(
                 dlg, text="Don't show again", variable=hide_var,

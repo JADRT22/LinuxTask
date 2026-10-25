@@ -10,6 +10,19 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Changed
+- **Adwaita-flavored visual polish (chrome only)**: the dark UI now uses an
+  explicit neutral palette - `#303030` window background, `#3a3a3a` button
+  fill - with a discreet 1px outline on every toolbar button, lighter hover
+  overlays on the neutral buttons and the flat settings gear, and the speed
+  drop-down restyled from the CustomTkinter blue theme to flat gray (its
+  height now matches the 32px button rhythm). Fonts are unified on DejaVu
+  Sans (speed menu, settings window, first-recording dialog, tooltip), and
+  "Open"/"Save" got wider buttons so their labels sit inside the new outline.
+  Recording, playback, hotkeys and every driver keep their exact behavior
+  and state colors (red/green/blue/orange); the toolbar is still the same
+  400x44 window with the same controls, no new options or dependencies.
+
 ## [v3.4.0] - 2026-10-24
 
 ### Added
