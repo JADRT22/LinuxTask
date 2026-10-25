@@ -10,6 +10,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+## [v3.4.1] - 2026-10-24
+
 ### Changed
 - **Adwaita-flavored visual polish (chrome only)**: the dark UI now uses an
   explicit neutral palette - `#303030` window background, `#3a3a3a` button
@@ -537,7 +539,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 - **Movement-precision tests**: `test_jitter.py` added to cover movement
   precision with unit tests.
 
-[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.4.1...HEAD
+[v3.4.1]: https://github.com/JADRT22/LinuxTask/compare/v3.4.0...v3.4.1
 [v3.4.0]: https://github.com/JADRT22/LinuxTask/compare/v3.3.0...v3.4.0
 [v3.3.0]: https://github.com/JADRT22/LinuxTask/compare/v3.2.1...v3.3.0
 [v3.2.1]: https://github.com/JADRT22/LinuxTask/compare/v3.2.0...v3.2.1
