@@ -12,8 +12,34 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [v3.5.1] - 2026-11-05
 
+A patch for the download itself. `v3.5.0` produced an AppImage that ran here
+and failed on GitHub's clean runner, so that release went out without the
+artifact - which is the one thing most readers of the release page came to
+get. Nothing about the recorder changed.
+
+The build script had been leaning on state a developer machine has and a
+runner does not: build tools already on `PATH`, and a local wheel cache that
+was hiding three separate packaging faults behind one green "build ok". Each
+is fixed at its own level, and each has a guard test that fails against the
+pre-fix script.
+
 ### Fixed
-- Build the wheels the way a clean runner has to
+- **The AppImage builds on a clean checkout.** `meson`, `meson-python`,
+  `ninja`, `patchelf`, `setuptools` and `wheel` are now installed inside the
+  bundled build environment and that environment's `bin` is put on `PATH`
+  before wheels are compiled, so the build no longer stops at
+  `meson executable "meson" not found` or at `FileNotFoundError: 'patchelf'`
+  in the RPATH step.
+- **The wheels that ship are the wheels that are pinned.** The build asked
+  pip for a bare package name and got whatever was newest (`dbus-python`
+  1.5.1 while the project pins 1.5.0); it now derives the version from the
+  pinned filename it is about to produce.
+- **A wheel with no compiled extension is an error, not an artifact.** The
+  probe that rejects a platform-tagged wheel containing only Python files ran
+  before the check that the pinned wheel exists at all, so a version mismatch
+  reported "contains no compiled extension" out of a `FileNotFoundError`. The
+  existence check now comes first and the failure names the exact file to
+  delete and rebuild.
 
 ## [v3.5.0] - 2026-11-05
 
