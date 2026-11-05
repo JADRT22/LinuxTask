@@ -48,7 +48,7 @@ from playback import Playback
 # public surface (LinuxTaskApp.<method>) is unchanged for callers and tests.
 from recorder import VIRTUAL_DEVICE_NAME, Recorder
 
-APP_VERSION = "3.4.1"
+APP_VERSION = "3.5.0"
 
 CONFIG_DIR_NAME = "linuxtask"
 CONFIG_FILE_NAME = "config.json"

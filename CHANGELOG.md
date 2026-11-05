@@ -10,6 +10,28 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+## [v3.5.0] - 2026-11-05
+
+### Changed
+- Guard the runner-only failures the first CI run produced
+- Give the distro-bindings job the Tk bindings its interpreter lacks
+- Skip the contract KDE case without the distro dbus bindings
+- Multi-monitor behaviour, the new toolchain, how to report a bug
+- Pin the interpreter, verify it, attach the artifact
+- Run the suite on every supported Python, plus lint and bindings
+- Put src on sys.path once and clear the lint fallout
+- Add root pyproject, dev requirements, Dependabot
+
+### Fixed
+- Make Python 3.10 resolvable and Pillow's Tk glue present
+- Source-build the evdev wheel, never reuse pip's cache
+- Never pip-install at launch, and stop eval'ing usernames
+- Make humanize real and keep Tk reads on the UI thread
+- Clamp the pointer to the union of every output
+
+### Security
+- Verify D-Bus senders and the bridge caller UID
+
 ## [v3.4.1] - 2026-10-24
 
 ### Changed
@@ -539,7 +561,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 - **Movement-precision tests**: `test_jitter.py` added to cover movement
   precision with unit tests.
 
-[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.4.1...HEAD
+[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.5.0...HEAD
+[v3.5.0]: https://github.com/JADRT22/LinuxTask/compare/v3.4.1...v3.5.0
 [v3.4.1]: https://github.com/JADRT22/LinuxTask/compare/v3.4.0...v3.4.1
 [v3.4.0]: https://github.com/JADRT22/LinuxTask/compare/v3.3.0...v3.4.0
 [v3.3.0]: https://github.com/JADRT22/LinuxTask/compare/v3.2.1...v3.3.0

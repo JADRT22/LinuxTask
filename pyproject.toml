@@ -10,7 +10,7 @@
 
 [project]
 name = "linuxtask"
-version = "3.4.1"
+version = "3.5.0"
 description = "Minimalist macro recorder for Linux: records and replays keyboard and mouse on Hyprland, Sway, GNOME Wayland, KDE Wayland and X11."
 readme = "README.md"
 # The floor is the one README and docs/CONTRIBUTING.md document and the one
