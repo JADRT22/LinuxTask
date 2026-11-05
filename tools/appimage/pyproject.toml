@@ -9,7 +9,6 @@ description = "Minimalist Macro Recorder for Linux"
 requires-python = ">=3.10"
 dependencies = [
     "customtkinter",
-    "evdev==2.0.0",
     "python-xlib",
 ]
 
@@ -25,12 +24,23 @@ app = "LinuxTask"
 entry_point = "linuxtask"
 python = "3.12"
 icon = "icon.png"
-# KDE Wayland driver needs dbus + PyGObject at runtime; they are not
-# on PyPI as cp312 glibc wheels, so build.sh source-builds them with
-# the bundled interpreter and these file: wheels get pip-installed
-# into the bundled site-packages by appimage.ctl's --package path.
+# Everything here is a file: wheel that tools/appimage/build.sh source-built
+# with the exact bundled interpreter, and pip installs it into the bundled
+# site-packages through appimage.ctl's --package path.
+#
+# dbus-python/PyGObject/pycairo: PyPI has no cp312 glibc wheels for them and
+# they bind to C libraries, so they must be built against this ABI.
+#
+# evdev: PyPI ships it as an sdist only (no wheel for any ABI), so pip has to
+# compile it. It is built here rather than left in [project].dependencies
+# because pip's machine-global wheel cache keys an entry by name+ABI tag and
+# not by whether the extension actually compiled — a wheel cached from a
+# build that ran without the right headers gets copied out forever, and the
+# bundle then ships a Python package whose `import evdev` fails on the user's
+# machine. The version must keep matching requirements.txt; a test asserts it.
 packages = [
     "../wheels/dbus_python-1.5.0-cp312-cp312-linux_x86_64.whl",
     "../wheels/pycairo-1.29.2-cp312-cp312-linux_x86_64.whl",
     "../wheels/pygobject-3.58.0-cp312-cp312-linux_x86_64.whl",
+    "../wheels/evdev-2.0.0-cp312-cp312-linux_x86_64.whl",
 ]

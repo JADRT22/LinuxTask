@@ -170,6 +170,17 @@ mkdir -p "$WHEELS"
 # packages), not a glob: an old-version wheel in $WHEELS must not make the
 # build skip a rebuild and then die later in pip install with a confusing
 # version-mismatch error.
+#
+# --no-cache-dir is not an optimisation knob here. pip's *global* wheel
+# cache (~/.cache/pip/wheels) is keyed by name+ABI tag, not by how the
+# extension modules were compiled, so a wheel that some earlier build on
+# this machine produced with a missing toolchain or kernel header is
+# copied out of the cache forever and lands in the bundle without its .so
+# files. That is exactly how an evdev-only AppImage ships: `import evdev`
+# then dies inside the bundle on the user's machine, and the smoke guard
+# at the bottom of this script is what catches it. $WHEELS is the only
+# cache this build is allowed to trust, because it is project-local and
+# its entries were produced by the interpreter pinned above.
 pinned_wheel() {
     python3 - "$1" <<'PYEOF'
 import re, sys
@@ -180,7 +191,8 @@ m = re.search(
 print(m.group(1) if m else "")
 PYEOF
 }
-for spec in "pycairo pycairo" "dbus-python dbus_python" "PyGObject pygobject"; do
+for spec in "pycairo pycairo" "dbus-python dbus_python" "PyGObject pygobject" \
+            "evdev==2.0.0 evdev"; do
     set -- $spec
     req="$1"; norm="$2"
     pinned="$(cd "$PROJ" && pinned_wheel "$norm")"
@@ -191,7 +203,21 @@ for spec in "pycairo pycairo" "dbus-python dbus_python" "PyGObject pygobject"; d
     if [ ! -f "$WHEELS/$pinned" ]; then
         echo "--- building wheel: $req (pinned: $pinned) ---"
         "$PYWHEEL/bin/python3" -m pip wheel --no-deps --no-build-isolation \
-            -w "$WHEELS" "$req"
+            --no-cache-dir -w "$WHEELS" "$req"
+    fi
+    # A platform wheel with no extension modules is a silently broken
+    # package: the tag says cp312, the RECORD says nothing is compiled.
+    # Say so here instead of letting the bundle pass and fail at runtime.
+    # zipfile rather than unzip: python3 is already a hard dependency of
+    # this script (pinned_wheel above), unzip is not everywhere.
+    if ! python3 -c "
+import sys, zipfile
+names = zipfile.ZipFile(sys.argv[1]).namelist()
+sys.exit(0 if any(n.endswith('.so') for n in names) else 1)
+" "$WHEELS/$pinned"; then
+        echo "ERROR: $WHEELS/$pinned contains no compiled extension." >&2
+        echo "       Rebuild it: rm -f that wheel and run this script again." >&2
+        exit 1
     fi
     [ -f "$WHEELS/$pinned" ] || {
         echo "ERROR: pinned wheel missing after build: $WHEELS/$pinned" >&2

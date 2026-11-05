@@ -206,5 +206,83 @@ class RealLockMatchesTheScriptOutput(unittest.TestCase):
             ['PYTHON_VERSION', 'SHA256', 'SIZE', 'TAG', 'URL'])
 
 
+class TestSourceBuiltWheels(unittest.TestCase):
+    """The bundle's compiled wheels must not come from pip's global cache.
+
+    PyPI serves evdev as an sdist only, so someone has to compile it. When
+    that happens inside appimage.ctl's pip install, pip is free to reuse
+    ~/.cache/pip/wheels -- keyed by name and ABI tag, not by whether the
+    extensions actually built -- and the AppImage ships an evdev whose
+    `import evdev` dies on the user's machine. build.sh therefore builds
+    every compiled dependency itself, into the project-local wheels dir.
+    """
+
+    def setUp(self):
+        with open(BUILD_SH, encoding='utf-8') as fh:
+            self.build = fh.read()
+        with open(STAGE_PYPROJECT, encoding='utf-8') as fh:
+            self.pyproject = fh.read()
+
+    def _wheel_loop(self):
+        start = self.build.index('for spec in')
+        return self.build[start:self.build.index('BPY=""', start)]
+
+    def test_evdev_is_source_built(self):
+        self.assertIn('evdev', self._wheel_loop())
+
+    def test_wheel_builds_skip_the_pip_wheel_cache(self):
+        self.assertIn('--no-cache-dir', self._wheel_loop())
+
+    def test_a_wheel_without_extensions_fails_the_build(self):
+        # The tag alone cannot tell a good wheel from an empty one.
+        self.assertIn(".so", self._wheel_loop())
+
+    def _appimage_packages(self):
+        """The [tool.appimage] packages list only.
+
+        Splitting on 'packages = [' from the whole file would hit
+        [tool.setuptools] packages = ["drivers"] first and silently test
+        nothing, which is worse than failing.
+        """
+        section = self.pyproject.split('[tool.appimage]')[1]
+        return section.split('packages = [')[1].split(']')[0]
+
+    def test_evdev_is_no_longer_left_to_pypi(self):
+        deps = self.pyproject.split('dependencies = [')[1].split(']')[0]
+        self.assertNotIn('evdev', deps)
+        self.assertIn('../wheels/evdev-', self._appimage_packages())
+
+    def test_bundled_evdev_version_matches_the_pinned_one(self):
+        with open(os.path.join(REPO, 'requirements.txt'),
+                  encoding='utf-8') as fh:
+            runtime = fh.read()
+        runtime_pin = re.search(r'^evdev==(\S+)$', runtime, re.M).group(1)
+        bundled = re.search(
+            r'\.\./wheels/evdev-([^/]+?)-cp\d+-cp\d+-',
+            self._appimage_packages()).group(1)
+        self.assertEqual(
+            bundled, runtime_pin,
+            "the AppImage would bundle a different evdev than the install "
+            "script does; update both pins together")
+
+    def test_every_pinned_wheel_is_in_the_build_loop(self):
+        # A wheel listed in pyproject but never built fails at the end of
+        # a long build instead of at the start.
+        packages = self._appimage_packages()
+        loop = self._wheel_loop()
+        for wheel in re.findall(r'\.\./wheels/([a-zA-Z_]+)-', packages):
+            canonical = {'dbus_python': 'dbus-python',
+                         'pygobject': 'PyGObject',
+                         'pycairo': 'pycairo'}.get(wheel, wheel)
+            self.assertIn(canonical, loop)
+
+    def test_the_build_loop_pins_a_wheel_for_every_bundled_binding(self):
+        # The loop above proves the names match; this proves the list has
+        # not lost one of the four wheels the app imports in the bundle.
+        packages = self._appimage_packages()
+        for wheel in ('evdev', 'dbus_python', 'pycairo', 'pygobject'):
+            self.assertIn(f'../wheels/{wheel}-', packages)
+
+
 if __name__ == '__main__':
     unittest.main()
