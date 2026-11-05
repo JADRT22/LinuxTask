@@ -13,7 +13,18 @@ if [ -z "$REAL_USER" ] && [ -n "${PKEXEC_UID:-}" ]; then
 fi
 REAL_USER="${REAL_USER:-${LOGNAME:-$USER}}"
 [ -n "$REAL_USER" ] || { echo "[ERROR] Could not determine the real user." >&2; exit 1; }
-USER_HOME=$(eval echo "~$REAL_USER")
+# Same as install.sh: the home directory is read from the passwd database
+# instead of `eval echo "~$USER"`, which would let the shell re-expand an
+# environment-derived value while running under pkexec/sudo.
+USER_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6 || true)
+if [ -z "$USER_HOME" ]; then
+    USER_HOME=$(getent passwd "$(id -u "$REAL_USER" 2>/dev/null || id -u)" \
+        | cut -d: -f6 || true)
+fi
+if [ -z "$USER_HOME" ]; then
+    echo "[ERROR] Could not determine the home directory of $REAL_USER." >&2
+    exit 1
+fi
 DESKTOP_DIR="$USER_HOME/.local/share/applications"
 DESKTOP_FILE="$DESKTOP_DIR/linuxtask.desktop"
 UDEV_RULE_PATH="/etc/udev/rules.d/99-linuxtask.rules"

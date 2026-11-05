@@ -63,24 +63,23 @@ if [ "$SESSION_TYPE" = "wayland" ] && echo "$DESKTOP" | grep -qi "kde"; then
     fi
 fi
 
-# Quick pip dependency check — install if missing
-$PYTHON_BIN -c "import customtkinter, evdev, Xlib" 2>/dev/null || {
-    echo "[INFO] Installing missing Python dependencies..."
-    if [ -x "$REPO_ROOT/.venv/bin/pip" ]; then
-        "$REPO_ROOT/.venv/bin/pip" install customtkinter || {
-            echo "[ERROR] Failed to install customtkinter into .venv. Run ./tools/install.sh"
-            exit 1
-        }
-    elif [ -d "$REPO_ROOT/venv" ]; then
-        "$REPO_ROOT/venv/bin/pip" install customtkinter evdev python-xlib
-    else
-        pip3 install --user customtkinter evdev python-xlib 2>/dev/null || \
-        python3 -m pip install --user customtkinter evdev python-xlib 2>/dev/null || {
-            echo "[ERROR] Failed to install dependencies. Run ./tools/install.sh (PEP 668 blocks pip --user on this system)"
-            exit 1
-        }
+# 3. Dependency check — this script never installs anything.
+# An auto `pip install` here would fetch and execute code from the network
+# every time the menu entry is clicked, bypass the requirements.txt pins
+# that ./tools/install.sh installs into .venv, and trip PEP 668 on any
+# current distro anyway. Deciding what gets installed is the setup
+# script's job, so this only reports and points at it.
+if ! $PYTHON_BIN -c "import customtkinter, evdev, Xlib" 2>/dev/null; then
+    echo "[ERROR] LinuxTask's Python dependencies are missing for $PYTHON_BIN." >&2
+    echo "        Run ./tools/install.sh once — it creates .venv with the" >&2
+    echo "        pinned requirements.txt and sets up permissions." >&2
+    if command -v zenity >/dev/null; then
+        zenity --error --title="LinuxTask setup needed" \
+            --text="LinuxTask cannot start: its Python dependencies are missing.\n\nRun ./tools/install.sh once, then start LinuxTask again." \
+            --width=380 2>/dev/null
     fi
-}
+    exit 1
+fi
 
 # 4. Run the application (.desktop entry calls this script, so the
 # menu shortcut follows the same interpreter choice). Arguments are

@@ -13,7 +13,21 @@ if [ -z "$REAL_USER" ] && [ -n "${PKEXEC_UID:-}" ]; then
 fi
 REAL_USER="${REAL_USER:-${LOGNAME:-$USER}}"
 [ -n "$REAL_USER" ] || { echo "[ERROR] Could not determine the real user." >&2; exit 1; }
-USER_HOME=$(eval echo "~$REAL_USER")
+# The home directory comes from the passwd database. `eval echo "~$USER"`
+# would have the shell re-expand a value that arrived through the
+# environment, and this script runs under pkexec/sudo — a username
+# carrying `$( )` or backticks would then execute as root. getent only
+# looks the account up; the UID retry covers NSS setups where the name is
+# not resolvable by itself.
+USER_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6 || true)
+if [ -z "$USER_HOME" ]; then
+    USER_HOME=$(getent passwd "$(id -u "$REAL_USER" 2>/dev/null || id -u)" \
+        | cut -d: -f6 || true)
+fi
+if [ -z "$USER_HOME" ]; then
+    echo "[ERROR] Could not determine the home directory of $REAL_USER." >&2
+    exit 1
+fi
 
 fail() {
     echo "[ERROR] $1" >&2
@@ -80,6 +94,43 @@ install_dbus_python_deps() {
     esac
 }
 
+# ydotool + ydotoold are the replay path on GNOME Wayland: the compositor
+# blocks XTEST, so the driver shells out to them for every button, click
+# and relative move. Best-effort like the KDE bindings — a desktop that
+# does not need them must not fail the install over them.
+install_ydotool_if_gnome() {
+    if ! printf '%s' "${XDG_CURRENT_DESKTOP:-}" | grep -qi gnome; then
+        return 0
+    fi
+    if command -v ydotool >/dev/null 2>&1 && command -v ydotoold >/dev/null 2>&1; then
+        echo "[INFO] ydotool and ydotoold already installed."
+        return 0
+    fi
+    local mgr
+    mgr=$(detect_pkg_manager)
+    echo "[INFO] GNOME Wayland detected: installing ydotool/ydotoold..."
+    case "$mgr" in
+        apt|pacman|dnf) install_package ydotool ;;
+        *)
+            echo "[WARN] Unknown package manager: install 'ydotool' manually"
+            echo "       for mouse replay on GNOME Wayland."
+            return 1
+            ;;
+    esac || return 1
+    # Distro packages do not always ship the daemon next to the client, and
+    # the driver needs both; say what is missing instead of pretending.
+    local missing=""
+    command -v ydotool >/dev/null 2>&1 || missing="$missing ydotool"
+    command -v ydotoold >/dev/null 2>&1 || missing="$missing ydotoold"
+    if [ -n "$missing" ]; then
+        echo "[WARN] Still missing after install:$missing."
+        echo "       The GNOME driver replays through UInput instead, which"
+        echo "       works but cannot warp the cursor on Wayland-only apps."
+        return 1
+    fi
+    echo "[INFO] ydotool and ydotoold installed."
+}
+
 # --- Privilege confirmation -------------------------------------------
 # Every sudo below (system packages, udev rule, ACLs) runs after this gate.
 # --yes skips it for unattended installs; already-root (pkexec/sudo from
@@ -137,6 +188,11 @@ as_user "$REPO_ROOT/.venv/bin/pip" install -r "$REPO_ROOT/requirements.txt" \
 # 0.1 Distro-provided D-Bus bindings for the KDE Wayland driver.
 # Best-effort: not fatal on non-KDE desktops.
 install_dbus_python_deps || true
+
+# 0.1b ydotool/ydotoold for the GNOME Wayland driver (no-op on other
+# desktops). Best-effort for the same reason as above: the driver keeps a
+# UInput replay fallback when the tools are absent.
+install_ydotool_if_gnome || true
 
 # Also ensure xdotool is available (needed for X11 desktops like Cinnamon)
 if ! command -v xdotool >/dev/null 2>&1; then
