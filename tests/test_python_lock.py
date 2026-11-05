@@ -290,5 +290,82 @@ class TestSourceBuiltWheels(unittest.TestCase):
             self.assertIn(f'../wheels/{wheel}-', packages)
 
 
+class TestWheelBuildEnvironment(unittest.TestCase):
+    """The scratch env must be able to build an sdist from a clean tree.
+
+    pycairo and dbus-python ship no cp312 wheel on PyPI, so build.sh
+    compiles them itself with `pip wheel --no-build-isolation`. That flag
+    means "use THIS environment, and whatever PATH says" -- and the release
+    runner has no meson and no patchelf installed system-wide. The local
+    build passed anyway, because build/appimage/wheels still held the
+    artifacts of an older bootstrap and the loop skipped pip wheel
+    entirely: the cache hid a build that could not run from scratch, and
+    the tag push found it.
+    """
+
+    def setUp(self):
+        with open(BUILD_SH, encoding='utf-8') as fh:
+            self.build = fh.read()
+
+    def test_the_wheel_env_bin_dir_is_on_path(self):
+        export_at = self.build.index('export PATH="$PYWHEEL/bin:$PATH"')
+        wheel_at = self.build.index('-m pip wheel')
+        self.assertLess(
+            export_at, wheel_at,
+            'the wheel builds must not reach a system meson, and must reach '
+            'the one this script installed')
+
+    def test_the_build_tools_are_checked_as_executables(self):
+        # A gate on bin/python3 alone lets a half-bootstrapped env through:
+        # the meson *module* can be installed while bin/meson is missing,
+        # which is precisely what meson-python then reports as "not found".
+        bootstrap = self.build[self.build.index('PYWHEEL="$STAGE/wheel-env"'):]
+        bootstrap = bootstrap[:bootstrap.index('mkdir -p "$WHEELS"')]
+        for tool in ('meson', 'ninja', 'patchelf'):
+            self.assertIn(f'"$PYWHEEL/bin/{tool}"', bootstrap,
+                          f'{tool} is not checked as an executable')
+            self.assertIn(tool, bootstrap.split(
+                'if [ ! -x "$PYWHEEL/bin/meson"')[1],
+                          f'{tool} is not installed into the wheel env')
+
+    def _loop(self, code_only=False):
+        start = self.build.index('for spec in')
+        loop = self.build[start:self.build.index('BPY=""', start)]
+        if code_only:
+            # This very suite was first fooled by the phrase "contains no
+            # compiled extension" appearing in an explanatory comment, so
+            # ordering checks read the loop with its comments stripped.
+            loop = '\n'.join(
+                line for line in loop.splitlines()
+                if not line.lstrip().startswith('#'))
+        return loop
+
+    def test_the_loop_builds_the_pinned_version_not_the_latest(self):
+        # `pip wheel dbus-python` builds what PyPI serves today, which is
+        # how a 1.5.1 wheel appeared next to a pyproject that still pinned
+        # 1.5.0 -- invisible while the old wheel sat in $WHEELS, fatal on a
+        # clean runner. The version has to come from the pin's filename.
+        loop = self._loop()
+        self.assertIn('"$req==$version"', loop)
+        self.assertIn('cut -d- -f2', loop)
+        self.assertNotIn('evdev==', loop,
+                         'the loop must not carry its own version')
+
+    def test_a_missing_wheel_is_reported_before_the_extension_probe(self):
+        # The wheel-exists check used to sit below the .so check, so a build
+        # that produced a different version failed with "contains no
+        # compiled extension" -- a real failure, explained by a false cause.
+        loop = self._loop(code_only=True)
+        self.assertLess(loop.index('[ -f "$WHEELS/$pinned" ]'),
+                        loop.index('no compiled extension'))
+
+    def test_patchelf_is_part_of_the_build_tools(self):
+        # meson-python rewrites the RPATH of every extension it links by
+        # calling the patchelf program; without it dbus-python dies with
+        # FileNotFoundError: 'patchelf'.
+        self.assertIn('patchelf', self.build.split(
+            '-m pip install -q')[1].split('\n')[1])
+
+
 if __name__ == '__main__':
     unittest.main()

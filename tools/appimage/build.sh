@@ -12,8 +12,9 @@
 # does not ship as cp312 glibc wheels, so build.sh source-builds them
 # against the exact bundled interpreter. That needs: pkg-config plus the
 # headers/dbus, glib2, gobject-introspection, cairo (Arch package names;
-# on other distros the -dev/-devel equivalents), and meson/ninja (pip,
-# into the scratch wheel-env, not the system). Their RUNTIME shared
+# on other distros the -dev/-devel equivalents), and meson/ninja/patchelf
+# (pip, into the scratch wheel-env, not the system — and on PATH from that
+# env, see the export below). Their RUNTIME shared
 # libraries (libdbus-1.so.3, libglib, libgirepository) and typelibs are
 # deliberately NOT bundled: every KDE host already ships them.
 #
@@ -162,8 +163,30 @@ if [ ! -x "$PYWHEEL/bin/python3" ]; then
     mkdir -p "$PYWHEEL"
     echo "--- extracting bundled interpreter for wheel building ---"
     tar -xzf "$PYTARBALL" -C "$PYWHEEL" --strip-components=1
-    "$PYWHEEL/bin/python3" -m pip install -q meson meson-python ninja setuptools wheel
 fi
+# The build tools have to exist as executables, not merely as importable
+# packages: meson-python resolves `meson` through PATH, so an env with the
+# module and without bin/meson compiles nothing. Testing the scripts
+# instead of the interpreter is what lets a half-bootstrapped env repair
+# itself rather than die at the first sdist.
+if [ ! -x "$PYWHEEL/bin/meson" ] || [ ! -x "$PYWHEEL/bin/ninja" ] \
+        || [ ! -x "$PYWHEEL/bin/patchelf" ]; then
+    echo "--- installing the wheel build tools in the bundled env ---"
+    # patchelf is not optional: meson-python rewrites the RPATH of every
+    # extension it links, and it shells out to the program rather than a
+    # python module. Without it, dbus-python dies with
+    # FileNotFoundError: 'patchelf' inside the sdist metadata hook.
+    "$PYWHEEL/bin/python3" -m pip install -q \
+        meson meson-python ninja patchelf setuptools wheel
+fi
+# --no-build-isolation means pip uses THIS environment to build, and sdists
+# like pycairo then look for meson/ninja on PATH. Nothing outside this env
+# is allowed to answer that lookup, so its bin dir goes first: on the release
+# runner the checkout was clean, there is no system meson there either, and
+# the build died with 'meson-python: error: meson executable "meson" not
+# found' while the local build passed -- because $WHEELS still held the
+# wheels of an earlier bootstrap and the loop skipped pip wheel entirely.
+export PATH="$PYWHEEL/bin:$PATH"
 mkdir -p "$WHEELS"
 # Wheels are cached across builds; build only what is missing. The cache
 # check uses the EXACT pinned filename from pyproject.toml ([tool.appimage]
@@ -192,7 +215,7 @@ print(m.group(1) if m else "")
 PYEOF
 }
 for spec in "pycairo pycairo" "dbus-python dbus_python" "PyGObject pygobject" \
-            "evdev==2.0.0 evdev"; do
+            "evdev evdev"; do
     set -- $spec
     req="$1"; norm="$2"
     pinned="$(cd "$PROJ" && pinned_wheel "$norm")"
@@ -200,11 +223,29 @@ for spec in "pycairo pycairo" "dbus-python dbus_python" "PyGObject pygobject" \
         echo "ERROR: no pinned ../wheels/ entry for '$norm' in pyproject.toml." >&2
         exit 1
     }
+    # Build exactly the version the pin names, never "whatever PyPI serves
+    # as latest": dbus-python 1.5.1 appeared on PyPI after these pins were
+    # written, so an unpinned `pip wheel dbus-python` produced
+    # dbus_python-1.5.1-cp312-...whl while pyproject still told pip to
+    # install 1.5.0 from ../wheels/. Locally invisible (the 1.5.0 wheel was
+    # still in $WHEELS from an older bootstrap), fatal on a clean runner.
+    # The version is the second field of the wheel filename, so the pin in
+    # pyproject.toml stays the single source of truth.
+    version="$(printf '%s\n' "$pinned" | cut -d- -f2)"
     if [ ! -f "$WHEELS/$pinned" ]; then
-        echo "--- building wheel: $req (pinned: $pinned) ---"
+        echo "--- building wheel: $req==$version (pinned: $pinned) ---"
         "$PYWHEEL/bin/python3" -m pip wheel --no-deps --no-build-isolation \
-            --no-cache-dir -w "$WHEELS" "$req"
+            --no-cache-dir -w "$WHEELS" "$req==$version"
     fi
+    # First that the file exists at all: without this check a wheel built
+    # under a different version reaches the extension probe below and
+    # reports "contains no compiled extension" from a FileNotFoundError,
+    # which is a true failure explained by a false reason.
+    [ -f "$WHEELS/$pinned" ] || {
+        echo "ERROR: the pinned wheel was not produced: $WHEELS/$pinned" >&2
+        echo "       pip built another version; fix the pin or the cache." >&2
+        exit 1
+    }
     # A platform wheel with no extension modules is a silently broken
     # package: the tag says cp312, the RECORD says nothing is compiled.
     # Say so here instead of letting the bundle pass and fail at runtime.
@@ -219,10 +260,6 @@ sys.exit(0 if any(n.endswith('.so') for n in names) else 1)
         echo "       Rebuild it: rm -f that wheel and run this script again." >&2
         exit 1
     fi
-    [ -f "$WHEELS/$pinned" ] || {
-        echo "ERROR: pinned wheel missing after build: $WHEELS/$pinned" >&2
-        exit 1
-    }
 done
 
 echo "--- build tool (isolated env) ---"
