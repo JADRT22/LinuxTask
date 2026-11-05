@@ -22,6 +22,10 @@ Bug reports and driver fixes for other compositors are especially welcome —
 each driver is a single file under `src/drivers/` behind a small abstract
 interface.
 
+Security reports take a different route: use the private disclosure
+channel in [SECURITY.md](../SECURITY.md) rather than an issue, so a fix
+can land before the problem is public.
+
 ## Getting started
 
 ### Requirements
@@ -123,29 +127,40 @@ Checklist before opening:
 ## Tests
 
 ```bash
-# Hardware- and display-independent suites (headless, no display needed):
-python -m unittest tests.test_main_flow tests.test_cli tests.test_jitter tests.test_coordinate_precision
+# Everything, headless — the CI command:
+.venv/bin/python -m pytest tests -q --timeout=120
+
+# Same suites, stdlib runner (no pytest needed):
+.venv/bin/python -m unittest discover -s tests -t .
+
+# Lint (rules and their documented exemptions live in pyproject.toml):
+.venv/bin/python -m ruff check .
 ```
 
-Run from the repo root with no extra setup as long as `evdev` and
-`customtkinter` are importable (the project `.venv` created by
-`tools/install.sh` has them): each suite prepends `src/`
+Run from the repo root. `pip install -r requirements-dev.txt` gets you
+pytest, pytest-cov, pytest-timeout and ruff; `tools/install.sh` already
+created the `.venv` these commands use, and each suite prepends `src/`
 to `sys.path` internally (alternatively, run with `PYTHONPATH=src`).
-CI (`.github/workflows/python-app.yml`) runs those four suites plus six
-more: `tests.test_x11_driver`, `tests.test_hyprland_driver`,
-`tests.test_sway_driver`, `tests.test_driver_factory`,
-`tests.test_input_devices` and `tests.test_appimage_smoke_coverage`.
+
+Collection is directory-based, so a new file under `tests/` reaches CI
+without editing a workflow. What to know before writing one:
 
 - The core flow suite exercises recording, playback dispatch, macro
   validation and persistence headlessly by instantiating the app without
-  a display.
-- The per-driver suites (`test_x11_driver`, `test_hyprland_driver`,
-  `test_sway_driver`) mock or exercise each driver individually.
-- Three suites never run in CI:
-  `.quarantine/tests/test_evdev_access.py` (quarantined manual hardware
-  check), `tests/test_kde_wayland.py` (needs the distro `python-dbus`
-  bindings) and `tests/test_experimental_addons.py` (needs numpy/Pillow
-  plus a live session) — run them manually when touching those areas.
+  a display or a mainloop.
+- Per-driver suites fake the IPC (subprocess output, D-Bus replies) —
+  never a live session, so the suite runs on a headless runner.
+- `tests/test_kde_wayland.py` and `tests/test_experimental_addons.py`
+  skip themselves when the distro bindings (`python-dbus`, `python-gi`,
+  numpy, Pillow) are missing. The `distro-bindings` CI job installs them
+  and runs the whole suite, so they do execute somewhere; a skip on your
+  machine normally just means a package is missing.
+- `.quarantine/tests/test_evdev_access.py` is a manual hardware check and
+  is not collected.
+- Packaging and installation have their own guards —
+  `test_appimage_smoke_coverage.py`, `test_appimage_ui_patch.py`,
+  `test_python_lock.py`, `test_setup_scripts.py` — because an AppImage or
+  installer breakage is otherwise invisible until a build or a user fails.
 - Add or update tests with behavior changes. A bug fix without a
   regression test will be asked to include one.
 

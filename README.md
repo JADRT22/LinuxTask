@@ -26,10 +26,6 @@ git clone https://github.com/JADRT22/LinuxTask.git && cd LinuxTask && ./tools/in
 
 Record with **F8**, replay with **F9** — global hotkeys work in any window.
 
-<p>
-<img src="assets/demo-v3.png" alt="The 400×44 px LinuxTask toolbar: Open, Save, record ●, play ▶, loop ↻, 1× speed and ⚙ settings" width="400">
-</p>
-
 > 🇧🇷 **Em Português:** LinuxTask é um gravador de macros para Linux — grava e reproduz teclado e mouse no Hyprland, Sway, GNOME Wayland, KDE Wayland e X11, com captura via `evdev` e reprodução por `uinput`/APIs do compositor. Instalação: `./tools/install.sh`, uso: `./tools/run.sh` (atalhos globais F8/F9).
 
 ## Table of contents
@@ -158,8 +154,23 @@ reads degrade to the fallback chain.
 - On first run the XDG Portal shows an authorization dialog; the driver
   waits up to 120 s for approval. If approval is denied or times out,
   cursor control stays disabled for that session.
-- Screen resolution is read from `kscreen-doctor`, with `xrandr` as
-  fallback and 1920×1080 as a last resort.
+- Screen resolution is read from `kscreen-doctor --json` (falling back to
+  the `kscreen-doctor -o` listing, then `xrandr`, then 1920×1080). From the
+  JSON listing the driver also takes **every** output's offset, so replayed
+  coordinates are clamped to the whole layout instead of the first monitor.
+- **Multi-monitor**: coordinates are clipped to the bounding box of the
+  outputs the compositor reports (offsets included, so a monitor placed
+  above or to the left of the primary one — negative origin — stays
+  reachable). This works on Hyprland (`hyprctl monitors -j`), Sway
+  (`swaymsg -t get_outputs`), KDE Wayland (`kscreen-doctor --json`, then
+  `xrandr`) and X11 (the root window already spans the layout), and on
+  GNOME Wayland **only** with the cursor-bridge extension, whose `GetLayout`
+  call reports the monitor union. Anywhere the layout cannot be read —
+  an older bridge on GNOME, a Plasma without `kscreen-doctor --json` — the
+  box degrades to the primary output, and a macro recorded on a second
+  monitor placed left/above the origin gets folded onto the primary screen.
+  The detected geometry is logged at start-up
+  (`Resolution (…): 2560x1440, layout 4480x1620+0-180`).
 - Cursor position is read from the compositor itself (KWin's scripting
   D-Bus API, `workspace.cursorPos`) and falls back to `xdotool
   getmouselocation`, which only works over XWayland surfaces; if both
@@ -347,36 +358,59 @@ Before the first recording ever starts, the app warns that recording
 captures *every* key pressed while it is on (including passwords typed
 in other windows) and offers "Don't show again".
 
+Found a way to break that model? Report it privately through
+[SECURITY.md](SECURITY.md) instead of opening an issue.
+
 ## Development
 
 ### Tests
 
 ```bash
-# Hardware- and display-independent suites (headless, no display needed):
-python -m unittest tests.test_main_flow tests.test_cli tests.test_jitter tests.test_coordinate_precision tests.test_gnome_driver
+# Everything, headless:
+.venv/bin/python -m pytest tests -q --timeout=120
+
+# The same suites without pytest:
+.venv/bin/python -m unittest discover -s tests -t .
 ```
 
-The command works from the repo root with no extra setup as long as
-`evdev` and `customtkinter` are importable (the project `.venv` created
-by `tools/install.sh` has them: `.venv/bin/python -m unittest ...`): each suite
-prepends `src/` to `sys.path` internally (alternatively, run with
-`PYTHONPATH=src`). The core flow suite exercises recording, playback
-dispatch, macro validation and persistence headlessly by instantiating
-the app without a display. CI runs that command plus six more suites
-(individually: `tests.test_x11_driver`, `tests.test_hyprland_driver`,
-`tests.test_sway_driver`, `tests.test_driver_factory`,
-`tests.test_input_devices`, `tests.test_appimage_smoke_coverage` —
-see `.github/workflows/python-app.yml` for the exact list).
-Three suites never run in CI:
-`.quarantine/tests/test_evdev_access.py` needs real hardware,
-`tests/test_kde_wayland.py` needs the distro `python-dbus` bindings
-and `tests/test_experimental_addons.py` needs numpy/Pillow plus a live
-session — run them manually when touching those areas.
+Both commands run from the repo root and collect `tests/` as it is, so
+adding a suite needs no CI edit. They need an interpreter that can
+import `evdev`, `customtkinter` and `python-xlib` — the project `.venv`
+created by `tools/install.sh` is one, and
+`pip install -r requirements-dev.txt` adds pytest, pytest-cov,
+pytest-timeout and ruff on top of it. Each suite prepends `src/` to
+`sys.path` internally, so there is nothing to install first
+(`PYTHONPATH=src` works too).
 
-`tests/test_appimage_smoke_coverage.py` reads
-`tools/appimage/build.sh` and fails when a driver module under
-`src/drivers/` is not on the smoke guard's import list, so a new driver
-cannot ship unimported again (the Sway driver did exactly that in 3.1.x).
+The suites are display- and hardware-independent: the flow suite
+exercises recording, playback dispatch, macro validation and
+persistence by instantiating the app without a display or a mainloop,
+and every driver is tested against fakes of its IPC (subprocess output,
+D-Bus replies) rather than a live session.
+
+CI (`.github/workflows/python-app.yml`) runs three jobs:
+
+| Job | What it proves |
+|---|---|
+| `test` | pytest with coverage on 3.10/3.11/3.12/3.13/3.14, then `unittest discover`, so the documented no-pytest path cannot rot |
+| `distro-bindings` | the same suite inside a `--system-site-packages` venv with `python3-dbus`, `python3-gi`, `python3-numpy`, `python3-pil` from apt — the only job where `tests/test_kde_wayland.py` and `tests/test_experimental_addons.py` really run |
+| `lint` | `python -m ruff check .`, rules and exemptions in `pyproject.toml` |
+
+Suites that need distro bindings skip themselves when those modules are
+missing, which is why the `test` job stays green without them — on a
+machine that should have them, that skip means a missing package.
+`.quarantine/tests/test_evdev_access.py` needs real hardware and is not
+collected at all.
+
+Three suites guard the packaging, because an AppImage-only breakage is
+otherwise invisible until a twenty-minute build dies at the end:
+`tests/test_appimage_smoke_coverage.py` reads `tools/appimage/build.sh`
+and fails when a driver module under `src/drivers/` is missing from the
+smoke guard's import list (the Sway driver shipped unimported in 3.1.x);
+`tests/test_appimage_ui_patch.py` checks every staging rewrite anchor
+against the real `src/main.py`; `tests/test_python_lock.py` checks the
+interpreter pin against `tools/appimage/build.sh` and
+`tools/appimage/pyproject.toml`.
 
 ### Release process
 
@@ -401,7 +435,19 @@ without touching any files.
 tools/appimage/build.sh
 ```
 
-Builds a reproducible AppImage on top of python-build-standalone.
+Builds an AppImage on top of python-build-standalone. The bundled
+interpreter is pinned in `tools/appimage/python-build-standalone.lock`
+(release tag + SHA-256) and `build.sh` verifies the download against that
+digest before using it, so two builds of one commit ship one CPython —
+the wheels are source-built against that same archive. Moving to a newer
+interpreter is an explicit act:
+
+```bash
+python3 tools/appimage/update_python_lock.py --write   # then rebuild
+```
+
+and the regenerated lock is committed with whatever needs it. `tests/test_python_lock.py`
+keeps the lock, the build script and `[tool.appimage] python` in agreement.
 
 Note: the bundled python-build-standalone Tk is compiled without
 fontconfig/Xft, so it only knows bitmap fonts — the AppImage toolbar shows
@@ -418,6 +464,7 @@ original glyph labels; the GUI is otherwise identical.
 | Hotkeys do not fire | Verify the `input` group: `groups $USER` — re-login after being added |
 | Missing dependency dialog | Follow the printed instructions (`python-xlib` via pip; `python3-dbus`/`python3-gi` via your package manager) |
 | GNOME: macros drift / "Absolute move emulated by relative delta" dialog | Install the cursor-bridge extension: `./tools/install-gnome-bridge.sh`, then log out and back in once. Check with the `gdbus NameHasOwner` call in [GNOME Wayland absolute mode](#gnome-wayland-absolute-mode) |
+| Clicks land on the wrong monitor, or a macro recorded on a second screen stops reaching it | The clamp box is the layout the compositor reports. Read the start-up line in the log (`linuxtask` prints `layout WxH+X+Y`); if it names only one output, LinuxTask could not enumerate them — on GNOME update and re-install the cursor-bridge extension (older versions have no `GetLayout`), on KDE check that `kscreen-doctor --json` works, on Hyprland/Sway that `hyprctl monitors -j` / `swaymsg -t get_outputs` report the offsets. `--start-pos` in the CLI is the workaround when the layout is unreadable |
 
 ## Uninstall
 
