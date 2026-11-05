@@ -10,6 +10,11 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+## [v3.5.1] - 2026-11-05
+
+### Fixed
+- Build the wheels the way a clean runner has to
+
 ## [v3.5.0] - 2026-11-05
 
 The point of this release is playing a macro back across more than one
@@ -655,7 +660,8 @@ happened to be configured.
 - **Movement-precision tests**: `test_jitter.py` added to cover movement
   precision with unit tests.
 
-[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.5.0...HEAD
+[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.5.1...HEAD
+[v3.5.1]: https://github.com/JADRT22/LinuxTask/compare/v3.5.0...v3.5.1
 [v3.5.0]: https://github.com/JADRT22/LinuxTask/compare/v3.4.1...v3.5.0
 [v3.4.1]: https://github.com/JADRT22/LinuxTask/compare/v3.4.0...v3.4.1
 [v3.4.0]: https://github.com/JADRT22/LinuxTask/compare/v3.3.0...v3.4.0
