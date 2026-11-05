@@ -5,17 +5,20 @@ LinuxTask Release Automation Script
 Automates version bumping, changelog updates, and git tagging.
 """
 
+import argparse
 import os
 import re
-import sys
-import argparse
 import subprocess
+import sys
 from datetime import datetime
 
 # Configuration
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAIN_PY_PATH = os.path.join(PROJECT_ROOT, 'src', 'main.py')
 PYPROJECT_PATH = os.path.join(PROJECT_ROOT, 'tools', 'appimage', 'pyproject.toml')
+# Root packaging/lint configuration; it repeats the version, so the release
+# script mirrors it here too (see _mirror_version_to_pyproject).
+ROOT_PYPROJECT_PATH = os.path.join(PROJECT_ROOT, 'pyproject.toml')
 README_PATH = os.path.join(PROJECT_ROOT, 'README.md')
 # Single canonical changelog at the repository root (docs/CHANGELOG.md was
 # merged into it and removed).
@@ -42,7 +45,7 @@ def get_current_version():
     if not os.path.exists(MAIN_PY_PATH):
         print(f"Error: {MAIN_PY_PATH} not found.")
         sys.exit(1)
-    with open(MAIN_PY_PATH, 'r') as f:
+    with open(MAIN_PY_PATH) as f:
         content = f.read()
         match = APP_VERSION_RE.search(content)
         if match:
@@ -67,10 +70,38 @@ def bump_version(current_version, bump_type):
         parts[2] += 1
     return '.'.join(map(str, parts))
 
+def _mirror_version_to_pyproject(path, new_version, required=False):
+    """Rewrites the `version = "x.y.z"` key of one pyproject.toml.
+
+    APP_VERSION in src/main.py stays the source of truth; every file that
+    repeats it is a drift risk, so the release script owns them all.
+    """
+    if not os.path.exists(path):
+        if required:
+            print(f"Warning: {path} is missing; its version key was not "
+                  "updated.")
+        return False
+    with open(path) as f:
+        pp = f.read()
+    pp_new, n_pp = re.subn(
+        r'^(version\s*=\s*)["\'][\d\.]+["\']',
+        f'\\g<1>"{new_version}"',
+        pp, count=1, flags=re.MULTILINE
+    )
+    if not n_pp:
+        print(f"Warning: no version key found in {path}.")
+        return False
+    with open(path, 'w') as f:
+        f.write(pp_new)
+    print(f"Updated {path} to version {new_version}")
+    return True
+
+
 def update_source_version(new_version):
     """Update the APP_VERSION constant in src/main.py and mirror it to
-    tools/appimage/pyproject.toml so AppImage builds don't drift."""
-    with open(MAIN_PY_PATH, 'r') as f:
+    the pyproject files (AppImage bundle and the root packaging/config
+    file) so neither build nor lint can drift from the released version."""
+    with open(MAIN_PY_PATH) as f:
         content = f.read()
     new_content, n = APP_VERSION_RE.subn(
         f'APP_VERSION = "{new_version}"', content
@@ -81,26 +112,15 @@ def update_source_version(new_version):
     with open(MAIN_PY_PATH, 'w') as f:
         f.write(new_content)
     print(f"Updated {MAIN_PY_PATH} to version {new_version}")
-    if os.path.exists(PYPROJECT_PATH):
-        with open(PYPROJECT_PATH, 'r') as f:
-            pp = f.read()
-        pp_new, n_pp = re.subn(
-            r'^(version\s*=\s*)["\'][\d\.]+["\']',
-            f'\\g<1>"{new_version}"',
-            pp, count=1, flags=re.MULTILINE
-        )
-        if n_pp:
-            with open(PYPROJECT_PATH, 'w') as f:
-                f.write(pp_new)
-            print(f"Updated {PYPROJECT_PATH} to version {new_version}")
-        else:
-            print(f"Warning: no version key found in {PYPROJECT_PATH}.")
+    _mirror_version_to_pyproject(PYPROJECT_PATH, new_version)
+    _mirror_version_to_pyproject(ROOT_PYPROJECT_PATH, new_version,
+                                 required=True)
 
     # Mirror the version into the README's "Status" line; a missing
     # pattern only warns (someone rewrote the README) so the release
     # still goes through.
     if os.path.exists(README_PATH):
-        with open(README_PATH, 'r') as f:
+        with open(README_PATH) as f:
             readme = f.read()
         readme_re = re.compile(
             r'^(This README describes )v[\d.]+(.*APP_VERSION.*)$',
@@ -334,13 +354,13 @@ def build_new_changelog_text(changelog_text, new_version, generated_entry):
         # Decide emptiness on the stripped slice but keep the original
         # lines: filtering blanks here would glue category headings to
         # the previous bullet (Markdown needs a blank line before ###).
-        if any(l.strip() for l in raw_slice):
+        if any(line.strip() for line in raw_slice):
             body = list(raw_slice)
         else:
             # Fallback to the generated draft; entry_body shares the
             # same header-then-blank-line layout as the main path once
             # leading blanks are stripped below.
-            body = [l + '\n' for l in entry_body]
+            body = [line + '\n' for line in entry_body]
         # Normalize only the edges: drop leading/trailing blank lines so
         # there is exactly one blank line between the heading and the
         # body, and guarantee newline termination.
@@ -348,7 +368,7 @@ def build_new_changelog_text(changelog_text, new_version, generated_entry):
             body.pop(0)
         while body and not body[-1].strip():
             body.pop()
-        body = [l if l.endswith('\n') else l + '\n' for l in body]
+        body = [line if line.endswith('\n') else line + '\n' for line in body]
         section = [entry_header, "\n"] + body + ["\n"]
         new_lines = (lines[:unreleased_idx]
                      + ["## [Unreleased]\n", "\n"]
@@ -399,7 +419,7 @@ def update_changelog_file(entry):
             f.write(new_text)
         return
 
-    with open(CHANGELOG_PATH, 'r') as f:
+    with open(CHANGELOG_PATH) as f:
         changelog_text = f.read()
 
     new_text = build_new_changelog_text(changelog_text, new_version, entry)
@@ -464,9 +484,11 @@ def get_highest_tag():
         if match:
             v_str = match.group(1)
             parts = list(map(int, v_str.split('.')))
-            while len(parts) < 3: parts.append(0)
+            while len(parts) < 3:
+                parts.append(0)
             versions.append(tuple(parts))
-    if not versions: return (0, 0, 0)
+    if not versions:
+        return (0, 0, 0)
     return max(versions)
 
 def main():
@@ -490,9 +512,11 @@ def main():
     print(f"Highest tag detected: v{highest_tag}")
     # Use the highest of code vs tag as base
     parts_code = list(map(int, code_version.split('.')))
-    while len(parts_code) < 3: parts_code.append(0)
+    while len(parts_code) < 3:
+        parts_code.append(0)
     parts_tag = list(map(int, highest_tag.split('.')))
-    while len(parts_tag) < 3: parts_tag.append(0)
+    while len(parts_tag) < 3:
+        parts_tag.append(0)
     base_version = code_version
     if tuple(parts_tag) > tuple(parts_code):
         print(f"Warning: Code version v{code_version} is behind highest tag v{highest_tag}.")
@@ -505,7 +529,7 @@ def main():
     if args.dry_run:
         print("\n--- DRY RUN: Changelog entry as it will be published ---")
         try:
-            with open(CHANGELOG_PATH, 'r') as f:
+            with open(CHANGELOG_PATH) as f:
                 changelog_text = f.read()
         except OSError as e:
             print(f"Warning: could not read {CHANGELOG_PATH}: {e}")
@@ -538,8 +562,11 @@ def main():
     update_changelog_file(changelog_entry)
     # Phase 3: Git operations
     print("Staging changes...")
-    run_command(["git", "add", "src/main.py", "tools/appimage/pyproject.toml",
-                 "README.md", "CHANGELOG.md"])
+    staged = ["src/main.py", "tools/appimage/pyproject.toml",
+              "README.md", "CHANGELOG.md"]
+    if os.path.exists(ROOT_PYPROJECT_PATH):
+        staged.append("pyproject.toml")
+    run_command(["git", "add"] + staged)
     print(f"Committing release v{new_version}...")
     run_command(["git", "commit", "-m", f"chore: release v{new_version}"])
     print(f"Tagging release v{new_version}...")

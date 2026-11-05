@@ -29,10 +29,46 @@ REPO_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 STAGE="$REPO_ROOT/build/appimage"
 PROJ="$STAGE/proj"
 WHEELS="$STAGE/wheels"
+# --- interpreter pin ---------------------------------------------------
+# Which CPython the bundle ships is decided by
+# tools/appimage/python-build-standalone.lock (release tag + sha256), not
+# by whatever upstream published last. Resolving `releases/latest` made
+# two builds of the same commit produce different bundles, and needed an
+# unauthenticated api.github.com call that CI rate-limits. Move the pin
+# deliberately: `python3 tools/appimage/update_python_lock.py --write`,
+# then rebuild.
+# The lock values also name the cache file, so a re-pin can never reuse a
+# tarball downloaded for another release.
+PYLOCK="$REPO_ROOT/tools/appimage/python-build-standalone.lock"
+[ -s "$PYLOCK" ] || {
+    echo "ERROR: missing $PYLOCK — the AppImage build has no interpreter pin." >&2
+    echo "       Recreate it: python3 tools/appimage/update_python_lock.py --write" >&2
+    exit 1
+}
+PBS_TAG=$(sed -n 's/^TAG=//p' "$PYLOCK")
+PBS_PYVER=$(sed -n 's/^PYTHON_VERSION=//p' "$PYLOCK")
+PBS_URL=$(sed -n 's/^URL=//p' "$PYLOCK")
+PBS_SHA256=$(sed -n 's/^SHA256=//p' "$PYLOCK")
+for _pbs_var in PBS_TAG PBS_PYVER PBS_URL PBS_SHA256; do
+    [ -n "${!_pbs_var}" ] || {
+        echo "ERROR: $_pbs_var is empty in $PYLOCK." >&2
+        exit 1
+    }
+done
+# Guard the shape of the pin: the archive must come from the release it
+# claims, over https, and never from a redirect target baked into the file.
+case "$PBS_URL" in
+    "https://github.com/astral-sh/python-build-standalone/releases/download/$PBS_TAG/"*) ;;
+    *)
+        echo "ERROR: $PYLOCK URL does not match TAG=$PBS_TAG: $PBS_URL" >&2
+        exit 1
+        ;;
+esac
+
 # python-build-standalone tarball, cached OUTSIDE proj/ (staging wipes
 # proj/ every run) and handed to appimage.ctl via --python-archive so
 # the tool installs the exact same interpreter the wheels target.
-PYTARBALL="$STAGE/python-3.12-latest.tar.gz"
+PYTARBALL="$STAGE/cpython-${PBS_PYVER}-${PBS_TAG}-x86_64-install_only_stripped.tar.gz"
 export PROJ
 
 rm -rf "$PROJ"
@@ -54,64 +90,47 @@ cp "$REPO_ROOT/tools/appimage/LinuxTask.desktop" "$PROJ/"
 
 # Entry point: main.py defines main() directly (used by the
 # linuxtask console script via pyproject.toml).
-python3 - <<'EOF'
-import os
-p = os.path.join(os.environ["PROJ"], "linuxtask_main.py")
-src = open(p).read()
-# ASCII toolbar labels (bundled Tk has no symbol fonts).
-subs = [
-    ('("●",', '("REC",'),
-    ('("▶",', '("PLAY",'),
-    ('("↻",', '("LOOP",'),
-    ('text="⚙"', 'text="SET"'),
-    ('text="▶"', 'text="PLAY"'),
-    ('text="■"', 'text="STOP"'),
-    ('text="●"', 'text="REC"'),
-]
-for old, new in subs:
-    assert old in src, f"pattern not found: {old}"
-    src = src.replace(old, new)
-# Text labels need a smaller font to fit the 32px buttons.
-old_font = 'self.btns[1].configure(font=("DejaVu Sans", 10))'
-assert old_font in src, f"pattern not found: {old_font}"
-src = src.replace(
-    old_font,
-    'self.btns[1].configure(font=("DejaVu Sans", 10))\n'
-    '        for b in self.btns[2:5]:\n'
-    '            b.configure(font=("DejaVu Sans", 10))',
-)
-open(p, "w").write(src)
-print("staged + patched OK")
-EOF
+#
+# The label/font rewrite lives in tools/appimage/patch_ui.py, not in a
+# heredoc: tests/test_appimage_ui_patch.py checks every anchor against the
+# real src/main.py, so a UI edit that invalidates a pattern fails in CI
+# instead of at the end of a twenty-minute AppImage build.
+python3 "$REPO_ROOT/tools/appimage/patch_ui.py" "$PROJ/linuxtask_main.py" || {
+    echo "ERROR: staging patch failed; src/main.py no longer matches" \
+         "tools/appimage/patch_ui.py." >&2
+    exit 1
+}
 
 # --- bundled-Python tarball (ABI source for the wheels) ---------------
 # Source-built wheels must target the exact ABI of the bundled
-# python-build-standalone build ([tool.appimage] python = "3.12"), so
-# the same tarball that feeds the AppDir interpreter is resolved here
-# (same asset rule as appimage/ctl/_python.py) and reused for both.
+# python-build-standalone build ([tool.appimage] python = "3.12"), so the
+# pinned archive resolved above feeds both the wheel build and the AppDir
+# interpreter.
+if [ -f "$PYTARBALL" ] \
+        && ! printf '%s  %s\n' "$PBS_SHA256" "$PYTARBALL" \
+            | sha256sum --check --status; then
+    echo "[WARN] cached tarball does not match the pin; re-downloading" >&2
+    rm -f "$PYTARBALL"
+fi
 if [ ! -f "$PYTARBALL" ]; then
-    echo "--- resolving python-build-standalone 3.12 tarball ---"
-    ASSET_URL="$(python3 - <<'EOF'
-import json, urllib.request
-data = json.load(urllib.request.urlopen(
-    "https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest"))
-for a in data["assets"]:
-    u = a["browser_download_url"]
-    if ("cpython-3.12." in u
-            and "x86_64-unknown-linux-gnu-install_only_stripped" in u
-            and "freethreaded" not in u):
-        print(u)
-        break
-EOF
-)"
-    [ -n "$ASSET_URL" ] || {
-        echo "ERROR: no cpython-3.12 x86_64 install_only_stripped asset found upstream." >&2
+    echo "--- downloading cpython ${PBS_PYVER} (release ${PBS_TAG}) ---"
+    curl -fL --retry 3 --continue-at - -o "$PYTARBALL.tmp" "$PBS_URL" || {
+        rm -f "$PYTARBALL.tmp"
+        echo "ERROR: could not download the pinned interpreter: $PBS_URL" >&2
         exit 1
     }
-    curl -fL --retry 3 --continue-at - -o "$PYTARBALL.tmp" "$ASSET_URL"
-    # Atomic publish: only complete downloads replace the cache entry,
-    # so an interrupted curl can never leave a truncated tarball that
-    # the cache-then-skip logic below would trust forever.
+    # Verification is the whole point of the pin: a truncated, redirected
+    # or substituted archive must never reach the bundle.
+    if ! printf '%s  %s\n' "$PBS_SHA256" "$PYTARBALL.tmp" \
+            | sha256sum --check --status; then
+        rm -f "$PYTARBALL.tmp"
+        echo "ERROR: sha256 mismatch for the pinned interpreter." >&2
+        echo "       expected $PBS_SHA256" >&2
+        exit 1
+    fi
+    # Atomic publish: only a verified download becomes the cache entry, so
+    # an interrupted curl can never leave a truncated tarball that the
+    # cache-then-skip logic above would trust forever.
     mv "$PYTARBALL.tmp" "$PYTARBALL"
 fi
 
