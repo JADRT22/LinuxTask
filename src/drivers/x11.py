@@ -1,10 +1,20 @@
+# -*- coding: utf-8 -*-
+"""
+LinuxTask - x11.py
+Description: X11/XWayland driver using python-xlib (XTest + XWarpPointer).
+Author: JADRT22 (https://github.com/JADRT22)
+License: MIT
+"""
+
 import logging
-import time
 import os
 import threading
+import time
+
 from evdev.ecodes import BTN_LEFT, BTN_MIDDLE, BTN_RIGHT
-from Xlib.display import Display
 from Xlib import X
+from Xlib.display import Display
+
 from .base import DesktopManager
 
 logger = logging.getLogger(__name__)
@@ -24,9 +34,16 @@ class X11Driver(DesktopManager):
         self._detect_resolution()
 
     def _detect_resolution(self):
+        """Reads the root geometry.
+
+        In X11 the root window spans every CRTC, so screen.width_in_pixels
+        is already the bounding box of the whole layout (multi-monitor
+        coordinates stay legal without extra work).
+        """
         screen = self.display.screen()
-        self.screen_width = screen.width_in_pixels
-        self.screen_height = screen.height_in_pixels
+        self.set_screen_size(
+            screen.width_in_pixels, screen.height_in_pixels
+        )
         logger.info(
             "X11 resolution detected: %dx%d",
             self.screen_width, self.screen_height
@@ -42,6 +59,7 @@ class X11Driver(DesktopManager):
                 return None
 
     def move_cursor(self, x, y):
+        """Warps the cursor to absolute (x, y) via XTest. True on success."""
         with self._lock:
             try:
                 cx, cy = self._clamp(x, y)
@@ -49,8 +67,10 @@ class X11Driver(DesktopManager):
                     X.MotionNotify, root=self._root.id, x=cx, y=cy
                 )
                 self.display.sync()
+                return True
             except Exception as exc:
                 logger.error("move_cursor(%d, %d) failed: %s", x, y, exc)
+                return False
 
     def move_relative(self, dx, dy):
         with self._lock:

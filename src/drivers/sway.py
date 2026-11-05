@@ -11,8 +11,10 @@ import logging
 import shlex
 import shutil
 import subprocess
+
 from evdev.ecodes import BTN_LEFT, BTN_MIDDLE, BTN_RIGHT
-from .base import DesktopManager, FALLBACK_RESOLUTION
+
+from .base import FALLBACK_RESOLUTION, DesktopManager
 
 logger = logging.getLogger(__name__)
 
@@ -77,33 +79,70 @@ class SwayDriver(DesktopManager):
         return "seat0"
 
     def _detect_resolution(self):
-        """Reads the root output geometry from swaymsg get_outputs."""
+        """Reads output geometry from swaymsg get_outputs.
+
+        'rect' holds the layout-space position and size the cursor warps in
+        ('current_mode' is the physical mode and differs under fractional
+        scaling), so the primary size and the clamp box both come from the
+        rects of all enabled outputs (#6, #7).
+        """
         try:
             outputs = self._command("-t get_outputs")
-            if isinstance(outputs, list) and outputs:
+            # Same reason as in the Hyprland driver: the `focused` scan
+            # below would raise AttributeError on a non-dict entry.
+            if isinstance(outputs, list):
+                outputs = [o for o in outputs if isinstance(o, dict)]
+            if outputs:
                 output = next(
                     (o for o in outputs if o.get("focused")), outputs[0]
                 )
-                # 'rect' holds the layout-space size the cursor warps in;
-                # 'current_mode' is the physical mode (differs on fractional
-                # scaling), so prefer the rect and fall back to the mode.
                 rect = output.get("rect") or {}
                 mode = output.get("current_mode") or {}
                 width = rect.get("width") or mode.get("width")
                 height = rect.get("height") or mode.get("height")
                 if width and height:
-                    self.screen_width = int(width)
-                    self.screen_height = int(height)
+                    self.set_screen_size(
+                        int(width), int(height),
+                        self._union_bounds(outputs))
+                    # See the Hyprland driver: one "layout WxH+X+Y" shape
+                    # for every driver, so support can ask for it and
+                    # compare across desktops.
+                    min_x, min_y, max_x, max_y = self.bounds
                     logger.info(
-                        "Sway resolution: %dx%d",
-                        self.screen_width, self.screen_height
+                        "Sway resolution: %dx%d, layout %dx%d%+d%+d",
+                        self.screen_width, self.screen_height,
+                        max_x - min_x, max_y - min_y, min_x, min_y
                     )
                     return
         except Exception as exc:
             logger.warning("swaymsg get_outputs failed: %s", exc)
 
-        self.screen_width, self.screen_height = FALLBACK_RESOLUTION
+        self.set_screen_size(*FALLBACK_RESOLUTION)
         logger.warning("Using fallback resolution: 1920x1080")
+
+    @staticmethod
+    def _union_bounds(outputs):
+        """Bounding box (min_x, min_y, max_x, max_y) of enabled outputs."""
+        boxes = []
+        for output in outputs:
+            if not isinstance(output, dict):
+                continue
+            if not output.get("enabled", True):
+                continue
+            rect = output.get("rect") or {}
+            try:
+                x, y = int(rect.get("x", 0)), int(rect.get("y", 0))
+                width, height = int(rect.get("width")), int(rect.get("height"))
+            except (TypeError, ValueError):
+                continue
+            if width > 0 and height > 0:
+                boxes.append((x, y, x + width, y + height))
+        if not boxes:
+            return None
+        return (
+            min(b[0] for b in boxes), min(b[1] for b in boxes),
+            max(b[2] for b in boxes), max(b[3] for b in boxes)
+        )
 
     # --- Driver API ----------------------------------------------------
 
@@ -136,10 +175,16 @@ class SwayDriver(DesktopManager):
         )
 
     def move_cursor(self, x, y):
-        """Warps the cursor to absolute coordinates ('cursor set')."""
+        """Warps the cursor to absolute coordinates ('cursor set').
+
+        Returns True when swaymsg reported the command as successful, so
+        playback can tell a refused warp from a done one.
+        """
         cx, cy = self._clamp(x, y)
-        if not self._seat_cmd("set", cx, cy):
-            logger.error("move_cursor(%d, %d) failed", cx, cy)
+        if self._seat_cmd("set", cx, cy):
+            return True
+        logger.error("move_cursor(%d, %d) failed", cx, cy)
+        return False
 
     def move_relative(self, dx, dy):
         """Moves the cursor by a relative offset ('cursor move')."""

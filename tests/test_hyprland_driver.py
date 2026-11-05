@@ -6,16 +6,11 @@ Author: JADRT22 (https://github.com/JADRT22)
 License: MIT
 """
 
-import unittest
-from unittest.mock import patch, MagicMock
-import subprocess
 import json
-import sys
-import os
+import unittest
+from unittest.mock import MagicMock, patch
 
-# Adjust path to import drivers
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
-
+# src/ is on sys.path through tests/__init__.py.
 from drivers.hyprland import HyprlandDriver
 
 
@@ -33,6 +28,27 @@ class TestHyprlandDriver(unittest.TestCase):
         driver = HyprlandDriver()
         self.assertEqual(driver.screen_width, 1920)
         self.assertEqual(driver.screen_height, 1080)
+
+    @patch('subprocess.check_output')
+    def test_layout_is_logged_in_the_shared_shape(self, mock_output):
+        # Support asks reporters for one greppable line no matter the
+        # desktop: "<driver> resolution: WxH, layout WxH+X+Y". The tuple
+        # form this used to print cannot be compared across drivers.
+        mock_output.return_value = json.dumps([
+            {"id": 0, "name": "eDP-1", "width": 1920, "height": 1080,
+             "x": 0, "y": 0, "focused": True},
+            {"id": 1, "name": "HDMI-A-1", "width": 2560, "height": 1440,
+             "x": 1920, "y": -360, "focused": False},
+        ]).encode()
+
+        with self.assertLogs('drivers.hyprland', level='INFO') as logs:
+            driver = HyprlandDriver()
+
+        self.assertEqual(driver.bounds, (0, -360, 4480, 1080))
+        self.assertTrue(
+            any('layout 4480x1440+0-360' in line for line in logs.output),
+            logs.output,
+        )
 
     @patch('subprocess.check_output')
     def test_get_cursor_pos(self, mock_output):

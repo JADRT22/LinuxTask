@@ -6,13 +6,11 @@ Author: JADRT22 (https://github.com/JADRT22)
 License: MIT
 """
 
+import os
+import sys
+import types
 import unittest
 from unittest.mock import patch
-import sys
-import os
-import types
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from drivers.factory import AutoDetectDriver
 

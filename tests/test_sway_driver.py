@@ -6,15 +6,11 @@ Author: JADRT22 (https://github.com/JADRT22)
 License: MIT
 """
 
-import unittest
-from unittest.mock import patch, MagicMock
-import sys
-import os
 import subprocess
+import unittest
+from unittest.mock import patch
 
-# Adjust path to import drivers
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
-
+# src/ is on sys.path through tests/__init__.py.
 from drivers.sway import SwayDriver
 
 OUTPUTS = [{
@@ -47,6 +43,24 @@ class TestSwayDriver(unittest.TestCase):
         driver = self._make_driver()
         self.assertEqual((driver.screen_width, driver.screen_height),
                          (2560, 1440))
+
+    def test_layout_is_logged_in_the_shared_shape(self):
+        # Same "layout WxH+X+Y" line every driver prints, so a reporter's
+        # log is comparable across desktops (see the Hyprland suite).
+        outputs = [
+            {"name": "eDP-1", "focused": True, "enabled": True,
+             "rect": {"x": 0, "y": 0, "width": 1920, "height": 1080}},
+            {"name": "DP-1", "focused": False, "enabled": True,
+             "rect": {"x": -2560, "y": 120, "width": 2560, "height": 1440}},
+        ]
+        with self.assertLogs('drivers.sway', level='INFO') as logs:
+            driver = self._make_driver(outputs=outputs)
+
+        self.assertEqual(driver.bounds, (-2560, 0, 1920, 1560))
+        self.assertTrue(
+            any('layout 4480x1560-2560+0' in line for line in logs.output),
+            logs.output,
+        )
 
     def test_resolution_falls_back_to_current_mode(self):
         outputs = [{"name": "eDP-1", "focused": True,
@@ -112,7 +126,7 @@ class TestSwayDriver(unittest.TestCase):
             self.assertFalse(driver.move_relative(10, 10))
 
     def test_mouse_button_maps_evdev_to_sway_names(self):
-        from evdev.ecodes import BTN_LEFT, BTN_RIGHT, BTN_MIDDLE, BTN_SIDE
+        from evdev.ecodes import BTN_LEFT, BTN_MIDDLE, BTN_RIGHT
         driver = self._make_driver()
         cases = [(BTN_LEFT, "press", "button1"),
                  (BTN_LEFT, "release", "button1"),

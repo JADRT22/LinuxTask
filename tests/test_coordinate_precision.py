@@ -10,7 +10,7 @@ import os
 import tempfile
 import unittest
 
-# Adjust path to import drivers
+# src/ is on sys.path through tests/__init__.py.
 from drivers.gnome import GnomeDriver
 
 # os.unlink is patched during setUp, so temp files are removed with this

@@ -7,8 +7,8 @@ License: MIT
 """
 
 import importlib.util
-import os
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
