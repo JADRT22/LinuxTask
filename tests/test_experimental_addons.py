@@ -11,14 +11,20 @@ Author: JADRT22 (https://github.com/JADRT22)
 License: MIT
 """
 
-import json
 import os
 import sys
 import threading
-import time
 import unittest
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError as exc:  # pragma: no cover
+    # The add-ons are optional, and so are their deps: skip the module
+    # instead of turning a missing numpy into a suite-wide error (that is
+    # what CI sees on an interpreter without the distro's python3-numpy).
+    raise unittest.SkipTest(
+        "experimental add-ons need numpy and Pillow "
+        "(pip install numpy pillow)") from exc
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(TESTS_DIR)
@@ -30,12 +36,15 @@ for p in (
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import vision  # noqa: E402
-import capture as capture_mod  # noqa: E402
-from spin_until_color import (  # noqa: E402
+from spin_until_color import (
     color_fraction as spin_color_fraction,
+)
+from spin_until_color import (
     wait_region_stable as spin_wait_region_stable,
 )
+
+import capture as capture_mod
+import vision
 
 
 def _solid(color, size=(40, 60)):
@@ -77,7 +86,7 @@ class TestSharedPrimitives(unittest.TestCase):
             def capture_region(self, region):
                 return _solid((10, 10, 10))
 
-        kwargs = dict(poll=0.02, need=3)
+        kwargs = {"poll": 0.02, "need": 3}
         stable_a, waited_a = capture_mod.wait_region_stable(
             Static(), (0, 0, 10, 10), **kwargs)
         stable_b, waited_b = spin_wait_region_stable(
@@ -189,7 +198,7 @@ class TestGUIColorSpinLogic(unittest.TestCase):
         stop.set()
         spins = 0
         max_spins = 100
-        for spin in range(1, max_spins + 1):
+        for _spin in range(1, max_spins + 1):
             if stop.is_set():
                 break
             spins += 1  # stand-in for click+check work

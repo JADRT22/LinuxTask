@@ -9,32 +9,107 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+# The old job hand-listed eleven `python -m unittest` commands, which meant
+# a new suite stayed unrun until someone remembered to add it (and
+# tests/test_kde_wayland.py, tests/test_experimental_addons.py and
+# .quarantine/tests never ran at all). Collecting `tests/` instead makes the
+# suite self-listing; the two suites that need distro modules now skip
+# themselves when those modules are missing, and a second job installs them
+# from apt so they really run somewhere.
+
 jobs:
-  build:
-
+  test:
+    name: Unit tests (${{ matrix.python-version }})
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: false
+      # Lowest and newest declared by pyproject.toml, plus the interpreter
+      # current stable distributions ship. A failure on 3.10/3.11 means the
+      # floor is a claim, not a fact.
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    - name: Run unit tests
-      run: |
-        # Run only logic/math tests that don't depend on hardware/display
-        python -m unittest tests/test_jitter.py
-        python -m unittest tests/test_coordinate_precision.py
-        python -m unittest tests/test_gnome_driver.py
-        python -m unittest tests/test_main_flow.py
-        python -m unittest tests/test_cli.py
-        python -m unittest tests/test_x11_driver.py
-        python -m unittest tests/test_hyprland_driver.py
-        python -m unittest tests/test_sway_driver.py
-        python -m unittest tests/test_driver_factory.py
-        python -m unittest tests/test_input_devices.py
-        python -m unittest tests/test_appimage_smoke_coverage.py
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run unit tests with coverage
+        # --timeout comes from pytest-timeout: a test that waits on a
+        # thread must fail the run instead of burning the job's 6h limit.
+        run: >
+          python -m pytest tests -q --timeout=120
+          --cov=src --cov=tools --cov-report=term-missing
+          --cov-report=xml
+
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+      - name: Check the unittest entry point still works
+        # README documents `python -m unittest discover` as the no-pytest
+        # path; prove it instead of assuming the two runners diverge.
+        run: python -m unittest discover -s tests -t . -q
+
+  distro-bindings:
+    name: Suite with distro D-Bus and GObject bindings
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # python3-dbus and python3-gi bind to the interpreter that ships
+      # them, so this job uses the runner's own python3 (3.12 on
+      # ubuntu-24.04) in a venv that can see the system modules. It is the
+      # only job where the KDE Wayland driver's suite actually runs.
+      - name: Install the system bindings the app cannot pip-install
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3 python3-venv python3-dbus python3-gi \
+            gir1.2-glib-2.0 python3-numpy python3-pil
+
+      - name: Build a venv that can see them
+        run: |
+          python3 -m venv --system-site-packages .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r requirements-dev.txt
+
+      - name: Run the full suite
+        # fail_if_no_tests is the guard: if the skip logic hid a whole
+        # suite, the job must not pass on an empty run.
+        run: >
+          .venv/bin/python -m pytest tests -q --timeout=120
+          --cov=src --cov-report=term-missing
+
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install ruff
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Check
+        # Rules and their exemptions live in pyproject.toml. `ruff format`
+        # is deliberately not gating: the repository predates it and the
+        # one-shot reformat would touch 38 files (3958 diff lines), which
+        # belongs in its own commit, not in every feature branch.
+        run: python -m ruff check .
