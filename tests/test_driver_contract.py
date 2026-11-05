@@ -17,6 +17,29 @@ from unittest.mock import MagicMock, patch
 from drivers.base import FALLBACK_RESOLUTION, DesktopManager
 
 
+def _distro_dbus_available():
+    """True when the KDE driver's module can actually be imported.
+
+    drivers.kde_wayland does `import dbus` at module scope, and
+    python-dbus only ever comes from the distribution (apt
+    python3-dbus), never from PyPI. So on the CI matrix -- and on any
+    machine where the user skipped requirements into a system-managed
+    environment -- the import fails before the first assertion runs.
+    That is an absent dependency, not a broken driver, and the suite has
+    to say so the way tests/test_kde_wayland.py does; the `distro-bindings`
+    job is where this case really executes.
+
+    Presence is checked by importing rather than with find_spec: a package
+    sitting on sys.path that cannot be loaded is exactly the failure being
+    guarded against.
+    """
+    try:
+        import dbus  # noqa: F401 -- this is a presence check, not a use
+    except ImportError:
+        return False
+    return True
+
+
 class TestMoveCursorContract(unittest.TestCase):
     """A driver must answer True/False, never None (see base.py).
 
@@ -122,6 +145,12 @@ class TestMoveCursorContract(unittest.TestCase):
         driver.move_relative = MagicMock(return_value=False)
         self.assertFalse(driver.move_cursor(10, 10))
 
+    @unittest.skipUnless(
+        _distro_dbus_available(),
+        "the KDE driver needs the distro python-dbus bindings "
+        "(apt install python3-dbus / pacman -S python-dbus); the "
+        "distro-bindings CI job runs this case for real",
+    )
     def test_kde_wayland_reports_refusal(self):
         from drivers.kde_wayland import KdeWaylandDriver
         driver = KdeWaylandDriver.__new__(KdeWaylandDriver)
