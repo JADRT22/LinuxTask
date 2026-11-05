@@ -83,18 +83,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # build.sh source-builds dbus-python and PyGObject against the
-      # bundled interpreter, so it needs their build-time headers (see the
-      # requirements block at the top of tools/appimage/build.sh).
+      # build.sh source-builds dbus-python, PyGObject and pycairo against
+      # the bundled interpreter, so it needs their build-time headers. The
+      # list lives in tools/appimage/install-build-deps.sh rather than
+      # here: a second copy of it is what let a tag push discover a missing
+      # dependency (see that script's header).
       - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            curl pkg-config \
-            libdbus-1-dev libglib2.0-dev libcairo2-dev \
-            libgirepository1.0-dev gir1.2-glib-2.0 gir1.2-girepository-2.0 \
-            gobject-introspection
-          python -m pip install --upgrade pip uv
+        run: bash tools/appimage/install-build-deps.sh
 
       - name: Build the AppImage
         run: ./tools/appimage/build.sh

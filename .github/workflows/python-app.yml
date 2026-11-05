@@ -103,6 +103,40 @@ jobs:
           .venv/bin/python -m pytest tests -q --timeout=120
           --cov=src --cov-report=term-missing
 
+  # Every AppImage defect found so far was discovered by pushing a tag: the
+  # artifact path (v3.5.0), meson and patchelf outside PATH plus the wrong
+  # wheel version (v3.5.1), and a -dev package the apt list did not name.
+  # Two releases shipped without the download while each surprise cost a
+  # separate attempt. The local build cannot see any of them --
+  # build/appimage/wheels still holds the output of an older bootstrap, and
+  # the build loop skips pip wheel for anything already cached. This job is
+  # the clean runner, on every push, and publishes nothing.
+  appimage:
+    name: AppImage build (clean runner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        # Single source of truth, shared with the release workflow: if a
+        # module build.sh preflights has no package here, the guard suite
+        # fails before this job is even written.
+        run: bash tools/appimage/install-build-deps.sh
+
+      - name: Build the AppImage
+        # Ends with the smoke guard: the bundled interpreter imports every
+        # driver and the gi/dbus stack from the freshly built AppImage, so a
+        # wheel that packed no compiled extension fails here rather than on
+        # a user's machine.
+        run: ./tools/appimage/build.sh
+
+      - name: Verify the artifact exists
+        # Same path the release job attaches from.
+        run: |
+          test -s build/appimage/dist/LinuxTask-x86_64.AppImage
+          ls -l build/appimage/dist/LinuxTask-x86_64.AppImage
+
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest

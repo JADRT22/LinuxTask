@@ -11,12 +11,15 @@
 # the bundle needs `dbus` (dbus-python) and `gi` (PyGObject), which PyPI
 # does not ship as cp312 glibc wheels, so build.sh source-builds them
 # against the exact bundled interpreter. That needs: pkg-config plus the
-# headers/dbus, glib2, gobject-introspection, cairo (Arch package names;
-# on other distros the -dev/-devel equivalents), and meson/ninja/patchelf
-# (pip, into the scratch wheel-env, not the system — and on PATH from that
-# env, see the export below). Their RUNTIME shared
-# libraries (libdbus-1.so.3, libglib, libgirepository) and typelibs are
-# deliberately NOT bundled: every KDE host already ships them.
+# headers for dbus, glib2 (glib/gobject/gio AND girepository-2.0, which
+# PyGObject 3.58 asks for by name), cairo (+ cairo-gobject), libffi and
+# gobject-introspection — see MODULE_CHECKS below for the list, verified
+# against the pinned sdists; meson/ninja/patchelf come from pip into the
+# scratch wheel-env and that env goes on PATH (see the export below).
+# CI installs the host packages with tools/appimage/install-build-deps.sh.
+# Their RUNTIME shared libraries (libdbus-1.so.3, libglib, libgirepository)
+# and typelibs are deliberately NOT bundled: every KDE host already ships
+# them.
 #
 # Usage: ./tools/appimage/build.sh
 # Requirements: uv (or a python with the `appimage` PyPI package),
@@ -140,18 +143,56 @@ if ! command -v pkg-config >/dev/null 2>&1; then
     echo "ERROR: pkg-config not found. It is required to source-build the dbus-python/PyGObject wheels (see header comment)." >&2
     exit 1
 fi
+# Every entry below is a `dependency()` call in the meson.build of the
+# exact version pinned in pyproject.toml, read from the sdist rather than
+# from memory:
+#   pycairo 1.29.2    cairo
+#   dbus-python 1.5.0 dbus-1 >= 1.8, glib-2.0 >= 2.40
+#   PyGObject 3.58.0  girepository-2.0 >= 2.80, glib/gobject/gio-2.0 >= 2.80,
+#                     libffi >= 3.0, gobject-introspection-1.0 >= 1.64,
+#                     cairo, cairo-gobject
+# The check used to be three hand-picked names, and the v3.5.1 appimage job
+# died anyway: the runner had the dbus and glib headers but no
+# girepository-2.0, because the apt list installed the legacy
+# libgirepository1.0-dev, which does not ship that module. One pkg-config
+# call per module costs nothing; dying inside meson costs minutes and names a
+# subprocess instead of the package to install.
+MODULE_CHECKS=(
+    "pycairo cairo"
+    "dbus-python dbus-1:1.8 glib-2.0:2.40"
+    "PyGObject girepository-2.0:2.80 glib-2.0:2.80 gobject-2.0:2.80
+     gio-2.0:2.80 libffi:3.0 gobject-introspection-1.0:1.64
+     cairo cairo-gobject"
+)
 missing_pc=""
-for pc in dbus-1 gobject-introspection-1.0 glib-2.0; do
-    pkg-config --exists "$pc" || missing_pc="$missing_pc $pc"
+for spec in "${MODULE_CHECKS[@]}"; do
+    set -- $spec
+    binding="$1"
+    shift
+    for modspec in "$@"; do
+        mod="${modspec%%:*}"
+        min="${modspec#*:}"
+        [ "$min" = "$modspec" ] && min=""
+        if ! pkg-config --exists "$mod" >/dev/null 2>&1; then
+            found="not installed"
+        elif [ -z "$min" ] || \
+                pkg-config --atleast-version="$min" "$mod" >/dev/null 2>&1; then
+            continue
+        else
+            found="found $(pkg-config --modversion "$mod"), needs $min"
+        fi
+        missing_pc="$missing_pc    $binding -> $mod ($found)"$'\n'
+    done
 done
 if [ -n "$missing_pc" ]; then
     cat >&2 <<MSG
-ERROR: pkg-config cannot find:$missing_pc
-The dbus-python/PyGObject wheels are source-built for the bundled
-cp312 interpreter and need those headers at build time. On Arch:
-  pacman -S dbus glib2 gobject-introspection cairo pkg-config
-(other distros: -dev/-devel packages of dbus, glib2,
-gobject-introspection and cairo).
+ERROR: a source-built wheel needs pkg-config modules this host lacks:
+$missing_pc
+Those versions are the pinned sdist's own \`dependency()\` requirements, not
+guesses. On Debian/Ubuntu, CI installs exactly this set through
+tools/appimage/install-build-deps.sh -- copy the package list from there.
+On Arch:
+  pacman -S dbus glib2 gobject-introspection cairo libffi pkg-config
 MSG
     exit 1
 fi
