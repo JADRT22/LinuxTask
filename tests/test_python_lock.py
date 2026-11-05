@@ -329,7 +329,11 @@ class TestWheelBuildEnvironment(unittest.TestCase):
                           f'{tool} is not installed into the wheel env')
 
     def _loop(self, code_only=False):
-        start = self.build.index('for spec in')
+        # Anchored on the wheel loop's own first spec, not on a bare
+        # 'for spec in': the pkg-config preflight above it uses the same
+        # loop variable, and a slice starting there reads the bootstrap
+        # pip install as if it were the per-wheel one.
+        start = self.build.index('for spec in "pycairo pycairo"')
         loop = self.build[start:self.build.index('BPY=""', start)]
         if code_only:
             # This very suite was first fooled by the phrase "contains no
@@ -365,6 +369,31 @@ class TestWheelBuildEnvironment(unittest.TestCase):
         # FileNotFoundError: 'patchelf'.
         self.assertIn('patchelf', self.build.split(
             '-m pip install -q')[1].split('\n')[1])
+
+    def test_pycairo_is_importable_before_pygobject_is_built(self):
+        # PyGObject's meson.build locates py3cairo.h by importing `cairo`
+        # with the target interpreter and only falls back to a host
+        # py3cairo.pc. The release runner had neither, so meson
+        # configured gi/pygi-foreign-cairo.c with no include directory
+        # and cc reported "fatal error: py3cairo.h: No such file or
+        # directory" -- invisible on Arch, where python-cairo ships the
+        # .pc that answers the fallback.
+        loop = self._loop(code_only=True)
+        self.assertIn('"$PYWHEEL/bin/python3" -c "import cairo"', loop)
+        self.assertLess(loop.index('import cairo'),
+                        loop.index('-m pip wheel'),
+                        'the guard must precede the build it protects')
+
+    def test_built_wheels_are_installed_into_the_wheel_env(self):
+        # What makes that import answer: each wheel the loop builds goes
+        # back into $PYWHEEL. --no-index matters -- a wheel resolved from
+        # PyPI would let the env hold a different build than $WHEELS.
+        loop = self._loop(code_only=True)
+        install = loop.split('-m pip install')[1].splitlines()
+        command = ' '.join(install[:2])
+        self.assertIn('--no-index', command)
+        self.assertIn('--find-links "$WHEELS"', command)
+        self.assertIn('"$req==$version"', command)
 
 
 if __name__ == '__main__':

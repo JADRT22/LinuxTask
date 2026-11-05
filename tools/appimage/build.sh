@@ -157,6 +157,10 @@ fi
 # libgirepository1.0-dev, which does not ship that module. One pkg-config
 # call per module costs nothing; dying inside meson costs minutes and names a
 # subprocess instead of the package to install.
+# Not in this list: py3cairo. The header it provides (py3cairo.h) comes
+# from the pycairo wheel this same loop builds and installs into the wheel
+# env -- installing a host python3-cairo-dev here would compile PyGObject
+# against headers of a different build than the one that ships.
 MODULE_CHECKS=(
     "pycairo cairo"
     "dbus-python dbus-1:1.8 glib-2.0:2.40"
@@ -264,6 +268,26 @@ for spec in "pycairo pycairo" "dbus-python dbus_python" "PyGObject pygobject" \
         echo "ERROR: no pinned ../wheels/ entry for '$norm' in pyproject.toml." >&2
         exit 1
     }
+    # PyGObject's meson.build resolves pycairo's C headers by importing the
+    # `cairo` module with the *target interpreter*, and only falls back to
+    # a host `py3cairo.pc` when that fails. The wheel env has neither at
+    # the start, so the release runner configured gi/pygi-foreign-cairo.c
+    # with no include directory and cc died on "fatal error: py3cairo.h:
+    # No such file or directory". Invisible locally: Arch ships
+    # python-cairo, whose py3cairo.pc answers the fallback. pycairo is the
+    # first entry of this loop and each built wheel is installed back into
+    # $PYWHEEL below, so by the time PyGObject is reached the import works
+    # -- and when it does not, this says so instead of letting cc guess.
+    # (This is also why py3cairo is NOT in MODULE_CHECKS: the header is
+    # what this build produces, not something to apt-install.)
+    if [ "$req" = "PyGObject" ] \
+            && ! "$PYWHEEL/bin/python3" -c "import cairo" 2>/dev/null; then
+        echo "ERROR: PyGObject needs the freshly built pycairo importable in" >&2
+        echo "       $PYWHEEL -- that is how meson finds py3cairo.h." >&2
+        echo "       pycairo is built earlier in this same loop; check that" >&2
+        echo "       step before reaching for a host package." >&2
+        exit 1
+    fi
     # Build exactly the version the pin names, never "whatever PyPI serves
     # as latest": dbus-python 1.5.1 appeared on PyPI after these pins were
     # written, so an unpinned `pip wheel dbus-python` produced
@@ -301,6 +325,14 @@ sys.exit(0 if any(n.endswith('.so') for n in names) else 1)
         echo "       Rebuild it: rm -f that wheel and run this script again." >&2
         exit 1
     fi
+    # Install what was just built back into the wheel env. It is not a
+    # packaging step -- the bundle gets its copies from $WHEELS through
+    # pyproject -- it is what makes the env able to answer the build-time
+    # lookups described above (PyGObject imports `cairo` to find its
+    # headers) and, as a side effect, pip has to read the wheel's own
+    # tags and RECORD, which the zip probe above cannot check.
+    "$PYWHEEL/bin/python3" -m pip install -q --no-index --no-deps \
+        --find-links "$WHEELS" "$req==$version"
 done
 
 echo "--- build tool (isolated env) ---"
