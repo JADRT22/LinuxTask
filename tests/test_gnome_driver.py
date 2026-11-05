@@ -12,10 +12,6 @@ subclass methods that touch the outside world are patched per test.
 
 import unittest
 from unittest.mock import patch
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 import drivers.gnome as gnome_mod
 from drivers.gnome import GnomeDriver
@@ -161,6 +157,71 @@ class TestBridgeWarp(unittest.TestCase):
             driver._warned.clear()
             driver.move_cursor(857, 340)
         self.assertEqual(deltas, [(847, 320)])
+
+
+class TestBridgeLayout(unittest.TestCase):
+    """#6/#7 on GNOME: the clamp box is the monitor union, not the stage.
+
+    GetScreenSize alone describes a single rectangle anchored at (0, 0), so
+    a monitor placed above or left of the primary one had its coordinates
+    folded back onto it. GetLayout returns [x, y, w, h] of the union.
+    """
+
+    def _detect(self, replies, bridge_ready=True):
+        driver = _make_driver(bridge_ready=bridge_ready, bridge_mode='dbus')
+
+        def fake_call(self, method, args, timeout):
+            return replies.get(method)
+
+        with patch.object(GnomeDriver, '_bridge_call', fake_call):
+            driver._detect_resolution()
+        return driver
+
+    def test_negative_origin_is_kept(self):
+        driver = self._detect({
+            'GetScreenSize': (2560, 1440),
+            'GetLayout': (0, -180, 4480, 1620),
+        })
+        self.assertEqual((driver.screen_width, driver.screen_height),
+                         (2560, 1440))
+        self.assertEqual(driver.bounds, (0, -180, 4480, 1440))
+        self.assertEqual(driver._clamp(4000, 700), (4000, 700))
+        self.assertEqual(driver._clamp(-5, -181), (0, -180))
+        self.assertEqual(driver._clamp(9999, 9999), (4479, 1439))
+
+    def test_old_bridge_without_getlayout_keeps_the_stage_box(self):
+        """GetLayout is unknown there: degrade to the previous behaviour."""
+        driver = self._detect({'GetScreenSize': (1920, 1080),
+                               'GetLayout': None})
+        self.assertEqual(driver.bounds, (0, 0, 1920, 1080))
+
+    def test_garbage_layout_is_ignored(self):
+        for reply in ((0, 0, 0, 0), ('a', 'b', 'c', 'd'), (1, 1, 1), ()):
+            driver = self._detect({'GetScreenSize': (1920, 1080),
+                                   'GetLayout': reply})
+            self.assertEqual(driver.bounds, (0, 0, 1920, 1080),
+                             "bad GetLayout reply %r changed the box"
+                             % (reply,))
+
+    def test_xrandr_fallback_sets_a_real_box(self):
+        """No bridge: bounds must still be a tuple, not None."""
+        driver = _make_driver(bridge_ready=False)
+        listing = (b'Screen 0: minimum 320 x 200, current 3840 x 1080\n'
+                   b'  1920x1080 60.00*+\n')
+        with patch('subprocess.check_output',
+                   return_value=listing):
+            driver._detect_resolution()
+        self.assertEqual((driver.screen_width, driver.screen_height),
+                         (1920, 1080))
+        self.assertEqual(driver.bounds, (0, 0, 1920, 1080))
+
+    def test_everything_failing_falls_back(self):
+        driver = _make_driver(bridge_ready=False)
+        import subprocess as _sp
+        with patch('subprocess.check_output',
+                   side_effect=_sp.CalledProcessError(1, 'x')):
+            driver._detect_resolution()
+        self.assertEqual(driver.bounds, (0, 0, 1920, 1080))
 
 
 if __name__ == '__main__':

@@ -9,20 +9,30 @@ Author: JADRT22 (https://github.com/JADRT22)
 License: MIT
 """
 
+import json
 import os
-import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+try:
+    import dbus
+except ImportError as exc:  # pragma: no cover
+    # python-dbus comes from the distribution, never from PyPI, so an
+    # interpreter without it must skip this suite instead of failing to
+    # import it — which is what a plain `pip install -r requirements.txt`
+    # CI job sees (see .github/workflows/python-app.yml).
+    raise unittest.SkipTest(
+        "KDE Wayland driver needs the distro python-dbus bindings "
+        "(apt install python3-dbus / pacman -S python-dbus)") from exc
 
-import dbus
-
-from drivers.kde_wayland import (  # noqa: E402
-    BTN_MAP,
+from drivers.kde_wayland import (
     _KWIN_SCRIPT_NAME as KWIN_SCRIPT_NAME,
+)
+from drivers.kde_wayland import (
+    BTN_MAP,
     KdeWaylandDriver,
+    _KwinCursorProbe,
 )
 
 
@@ -126,6 +136,9 @@ def make_kwin_driver(load_result=7, probe_payload='123,456',
     driver._kwin_scripting = MagicMock()
     driver._kwin_scripting.loadScript.return_value = load_result
     driver._kwin_script_path = '/tmp/fake.js'
+    # The read rewrites this file with a per-read nonce; stubbed here so
+    # the offline tests never touch the real filesystem.
+    driver._kwin_write_script = MagicMock(return_value=True)
     driver._kwin_probe = MagicMock()
     driver._kwin_probe.wait.return_value = wait_result
     driver._kwin_probe.payload.return_value = probe_payload
@@ -400,6 +413,183 @@ class TestKdeWaylandCursorRead(unittest.TestCase):
         driver._kwin_script_path = path
         driver._kwin_cleanup()
         self.assertFalse(os.path.exists(path))
+
+
+class TestKwinProbeTrust(unittest.TestCase):
+    """The probe object is a public bus endpoint: who may answer matters.
+
+    Every process in the user's session can call
+    org.linuxtask.cursorprobe.result(); without the sender and nonce
+    filters, one of them could set the position the driver dead-reckons
+    from and steer a replayed click anywhere.
+    """
+
+    def _probe(self):
+        return _KwinCursorProbe(MagicMock())
+
+    def test_reply_from_another_sender_is_ignored(self):
+        probe = self._probe()
+        probe.trust_sender(':1.7')
+        probe.reset(100)
+        with self.assertLogs('drivers.kde_wayland', level='WARNING'):
+            probe.result('100,10,20', sender=':1.99')
+        self.assertIsNone(probe.payload())
+        self.assertFalse(probe.wait(0.01))
+        self.assertEqual(probe.rejected, 1)
+        # The driver reads this flag to re-resolve the KWin name (KWin
+        # restarts get a new one, and the cached value would else stay
+        # wrong for the rest of the session).
+        self.assertTrue(probe.saw_rejection)
+
+    def test_stale_nonce_is_ignored(self):
+        probe = self._probe()
+        probe.trust_sender(':1.7')
+        probe.reset(101)
+        # A reply from the read that already timed out must not be taken
+        # for this read's answer.
+        probe.result('100,1,2', sender=':1.7')
+        self.assertIsNone(probe.payload())
+        self.assertFalse(probe.wait(0.01))
+        probe.result('101,3,4', sender=':1.7')
+        self.assertEqual(probe.payload(), '3,4')
+        self.assertTrue(probe.wait(0.01))
+
+    def test_open_probe_accepts_any_sender_until_one_is_trusted(self):
+        """Fail open before the name is known: refusing everything would
+        turn a reachable KWin into a dead read path."""
+        probe = self._probe()
+        probe.reset(None)
+        probe.result('7,8', sender=':1.42')
+        self.assertEqual(probe.payload(), '7,8')
+
+    def test_write_script_embeds_the_nonce(self):
+        driver = make_driver()
+        fd, path = tempfile.mkstemp(suffix='.js', prefix='test_nonce_')
+        os.close(fd)
+        try:
+            driver._kwin_script_path = path
+            self.assertTrue(driver._kwin_write_script(1234))
+            with open(path, encoding='utf-8') as script_file:
+                content = script_file.read()
+            self.assertIn('"1234,"', content)
+            self.assertIn('org.linuxtask.cursorprobe', content)
+        finally:
+            os.unlink(path)
+
+    def test_write_script_failure_is_reported(self):
+        driver = make_driver()
+        driver._kwin_script_path = None
+        self.assertFalse(driver._kwin_write_script(1))
+
+
+class TestPortalResponseTrust(unittest.TestCase):
+    """A Response signal must come from the portal, not from a neighbour."""
+
+    def _captured_callback(self, driver):
+        driver._bus.add_signal_receiver.side_effect = None
+        with patch.object(driver, '_predict_request_path',
+                          return_value='/org/freedesktop/portal/desktop/'
+                                       'request/x/ht_1'):
+            driver._portal_call(MagicMock(), {}, timeout=0.01)
+        args, kwargs = driver._bus.add_signal_receiver.call_args
+        return args[0], kwargs
+
+    def test_signal_registration_asks_for_the_sender(self):
+        driver = make_driver()
+        driver._bus = MagicMock()
+        driver._portal_sender = ':1.5'
+        _, kwargs = self._captured_callback(driver)
+        self.assertEqual(kwargs.get('sender_keyword'), 'sender')
+
+    def test_response_from_another_connection_is_dropped(self):
+        driver = make_driver()
+        driver._bus = MagicMock()
+        driver._portal_sender = ':1.5'
+        callback, _ = self._captured_callback(driver)
+        with self.assertLogs('drivers.kde_wayland', level='WARNING'):
+            callback(0, {}, sender=':1.666')
+        self.assertFalse(driver._portal_sender)  # cache invalidated
+
+    def test_response_from_the_portal_is_accepted(self):
+        driver = make_driver()
+        driver._bus = MagicMock()
+        driver._portal_sender = ':1.5'
+        callback, _ = self._captured_callback(driver)
+        callback(0, {'session_handle': '/s'}, sender=':1.5')
+        self.assertTrue(driver._portal_sender)  # cache kept
+
+
+class TestKdeLayoutDetection(unittest.TestCase):
+    """Multi-monitor geometry (#6, #7): the clamp box is the whole layout.
+
+    The two open reports are one dual-display setup and one 2560x1440
+    screen; both came from clipping against a single detected output.
+    """
+
+    def _driver(self, check_output):
+        with patch.object(KdeWaylandDriver, '_portal_init'), \
+                patch('drivers.kde_wayland.subprocess.check_output',
+                      side_effect=check_output):
+            return KdeWaylandDriver()
+
+    def test_json_layout_union_is_used(self):
+        payload = json.dumps([
+            {"output": {"name": "DP-1", "enabled": True, "primary": True,
+                        "mode": {"size": {"width": 2560, "height": 1440}},
+                        "pos": {"x": 0, "y": 0}}},
+            {"output": {"name": "HDMI-1", "enabled": True,
+                        "mode": {"size": {"width": 1920, "height": 1080}},
+                        "pos": {"x": 2560, "y": -180}}},
+        ]).encode()
+        driver = self._driver([payload])
+        self.assertEqual((driver.screen_width, driver.screen_height),
+                         (2560, 1440))
+        self.assertEqual(driver.bounds, (0, -180, 4480, 1440))
+        self.assertEqual(driver._clamp(4000, 700), (4000, 700))
+
+    def test_json_disabled_output_is_excluded(self):
+        payload = json.dumps({
+            "outputs": [
+                {"output": {"enabled": True,
+                             "mode": {"size": {"width": 1920, "height": 1080}},
+                             "pos": {"x": 0, "y": 0}}},
+                {"output": {"enabled": False,
+                            "mode": {"size": {"width": 3840, "height": 2160}},
+                            "pos": {"x": 1920, "y": 0}}},
+            ]
+        }).encode()
+        driver = self._driver([payload])
+        self.assertEqual(driver.bounds, (0, 0, 1920, 1080))
+
+    def test_text_listing_still_works_without_positions(self):
+        """Older kscreen-doctor: no --json, only the '*'-marked mode."""
+        driver = self._driver([
+            OSError('no --json'),
+            b'Output: 2 DP-1 enabled  (primary)\n'
+            b'    1: 1600x900@59.95\n    5: 2560x1440@59.95*\n',
+        ])
+        self.assertEqual((driver.screen_width, driver.screen_height),
+                         (2560, 1440))
+        self.assertEqual(driver.bounds, (0, 0, 2560, 1440))
+
+    def test_xrandr_offsets_are_used_as_a_last_resort(self):
+        driver = self._driver([
+            OSError('no kscreen'), OSError('no kscreen text'),
+            (b'Screen 0: minimum 0 x 0, current 4480 x 1260\n'
+             b'DP-4 connected primary 2560x1440+0+0 (normal left inverted)\n'
+             b'  2560x1440 59.95*\n'
+             b'HDMI-0 connected 1920x1080+2560-180\n'
+             b'  1920x1080 60.00*\n'),
+        ])
+        self.assertEqual((driver.screen_width, driver.screen_height),
+                         (2560, 1440))
+        self.assertEqual(driver.bounds, (0, -180, 4480, 1440))
+
+    def test_everything_failing_keeps_the_fallback_box(self):
+        driver = self._driver([OSError('a'), OSError('b'), OSError('c')])
+        self.assertEqual((driver.screen_width, driver.screen_height),
+                         (1920, 1080))
+        self.assertEqual(driver.bounds, (0, 0, 1920, 1080))
 
 
 if __name__ == '__main__':

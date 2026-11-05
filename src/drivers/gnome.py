@@ -6,16 +6,18 @@ Author: JADRT22 (https://github.com/JADRT22)
 License: MIT
 """
 
-import subprocess
-import shutil
 import atexit
+import logging
 import os
 import re
-import time
-import logging
+import shutil
+import subprocess
 import threading
+import time
+
 from evdev.ecodes import BTN_LEFT, BTN_MIDDLE, BTN_RIGHT
-from .base import DesktopManager, FALLBACK_RESOLUTION
+
+from .base import FALLBACK_RESOLUTION, DesktopManager
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +109,50 @@ class GnomeDriver(DesktopManager):
             except Exception:
                 logger.debug("warn_fn suppressed: %s", msg, exc_info=True)
 
+    def _bridge_owner_is_self(self):
+        """True when the bridge name is owned by a process of our own UID.
+
+        The session bus is shared by every process the user runs, so a
+        squatter could claim org.linuxtask.cursorbridge and answer
+        GetPointer with invented coordinates, which the recorder would then
+        store as truth. Checking GetConnectionUnixUser before trusting any
+        reply rejects that caller. An unreadable answer is treated as
+        allowed (older buses, no permission) while a real mismatch is not.
+        """
+        uid = None
+        try:
+            if self._bridge_mode == 'dbus':
+                import dbus
+                iface = dbus.Interface(
+                    self._bridge_bus.get_object(
+                        'org.freedesktop.DBus', '/org/freedesktop/DBus'),
+                    'org.freedesktop.DBus')
+                uid = int(iface.GetConnectionUnixUser(BRIDGE_NAME))
+            elif self._bridge_gdbus:
+                out = subprocess.check_output(
+                    ['gdbus', 'call', '--session',
+                     '--dest', 'org.freedesktop.DBus',
+                     '--object-path', '/org/freedesktop/DBus',
+                     '--method', 'org.freedesktop.DBus.GetConnectionUnixUser',
+                     BRIDGE_NAME],
+                    timeout=2
+                ).decode()
+                parsed = self._gdbus_parse(out)
+                uid = int(parsed[0]) if parsed else None
+        except Exception as exc:
+            logger.debug("bridge owner uid check failed: %s", exc)
+            return True
+        if uid is None:
+            return True
+        if uid != self.uid:
+            self._warn_once(
+                'bridge_uid',
+                "Cursor bridge name is owned by uid %d, not this session "
+                "(uid %d); ignoring it. Absolute positioning falls back to "
+                "relative deltas.", uid, self.uid)
+            return False
+        return True
+
     def _bridge_setup(self):
         """Probes the cursor bridge and picks the calling mode.
 
@@ -131,6 +177,10 @@ class GnomeDriver(DesktopManager):
                     self._bridge_bus = bus
                     self._bridge_mode = 'dbus'
                     self._bridge_ready = True
+                    if not self._bridge_owner_is_self():
+                        self._bridge_ready = False
+                        self._bridge_mode = None
+                        return
                     logger.info("GNOME cursor bridge detected (dbus mode).")
                     return
             except Exception as exc:
@@ -149,7 +199,13 @@ class GnomeDriver(DesktopManager):
                 if '"true"' in out:
                     self._bridge_mode = 'gdbus'
                     self._bridge_ready = True
-                    logger.info("GNOME cursor bridge detected (gdbus mode).")
+                    if not self._bridge_owner_is_self():
+                        self._bridge_ready = False
+                        self._bridge_mode = None
+                    else:
+                        logger.info(
+                            "GNOME cursor bridge detected (gdbus mode).")
+                        return
             except (subprocess.CalledProcessError, FileNotFoundError,
                     subprocess.TimeoutExpired, UnicodeDecodeError) as exc:
                 logger.debug("bridge gdbus probe failed: %s", exc)
@@ -184,7 +240,7 @@ class GnomeDriver(DesktopManager):
         with self._bridge_lock:
             if self._bridge_mode == 'dbus':
                 try:
-                    import dbus
+                    import dbus  # noqa: F401  (re-checks availability here)
                     proxy = self._bridge_proxy_get()
                     reply = proxy.get_dbus_method(method, BRIDGE_IFACE)(
                         *args, timeout=BRIDGE_CALL_TIMEOUT)
@@ -325,17 +381,19 @@ class GnomeDriver(DesktopManager):
         return True
 
     def move_cursor(self, x, y):
-        """Moves the cursor to absolute (x, y).
+        """Moves the cursor to absolute (x, y). True when the warp landed.
 
         With the bridge installed this is a real absolute jump
         (seat.warp_pointer). Without it, GNOME has no absolute cursor
         API for clients, so the legacy path emulates absolute via a
-        relative delta computed from the current position.
+        relative delta computed from the current position. Returning
+        False (rather than None) is what makes playback.py fall back to
+        the UInput warp instead of dropping the event.
         """
         try:
             x, y = self._clamp(x, y)
             if self._bridge_ready and self._bridge_warp(x, y):
-                return
+                return True
             if not self._bridge_ready:
                 self._warn_once(
                     'abs_fallback',
@@ -346,11 +404,12 @@ class GnomeDriver(DesktopManager):
             pos = self.get_cursor_pos()
             if pos is None:
                 logger.error("move_cursor aborted: cursor pos unknown")
-                return
+                return False
             cur_x, cur_y = pos
-            self.move_relative(int(x) - int(cur_x), int(y) - int(cur_y))
+            return self.move_relative(int(x) - int(cur_x), int(y) - int(cur_y))
         except Exception as exc:
             logger.error("move_cursor(%s, %s) failed: %s", x, y, exc)
+            return False
 
     def move_relative(self, dx, dy):
         """Moves cursor by relative offset using ydotool."""
@@ -426,18 +485,40 @@ class GnomeDriver(DesktopManager):
 
         # Check if socket already exists and is functional
         if os.path.exists(self.socket):
+            usable = True
             try:
-                env = os.environ.copy()
-                env['YDOTOOL_SOCKET'] = self.socket
-                result = subprocess.run(
-                    [self.ydotool_path, 'mousemove', '--', '0', '0'],
-                    env=env, capture_output=True, timeout=2
-                )
-                if result.returncode == 0:
-                    logger.info("Existing ydotoold socket is functional.")
-                    return
-            except (subprocess.TimeoutExpired, FileNotFoundError):
-                pass
+                # Never talk to a socket we do not own, and never leave a
+                # group/world-writable one lying around: it is an open
+                # input-injection door for the whole session.
+                st = os.stat(self.socket)
+                if st.st_uid != self.uid:
+                    logger.error(
+                        "Socket %s is owned by uid %d, not this user; "
+                        "refusing to use it.", self.socket, st.st_uid)
+                    usable = False
+                elif st.st_mode & 0o077:
+                    os.chmod(self.socket, 0o600)
+                    logger.warning(
+                        "Tightened %s to 0600 (it was %o).",
+                        self.socket, st.st_mode & 0o777)
+            except OSError as exc:
+                logger.debug("Existing socket stat failed: %s", exc)
+                usable = False
+            if usable:
+                try:
+                    env = os.environ.copy()
+                    env['YDOTOOL_SOCKET'] = self.socket
+                    result = subprocess.run(
+                        [self.ydotool_path, 'mousemove', '--', '0', '0'],
+                        env=env, capture_output=True, timeout=2
+                    )
+                    if result.returncode == 0:
+                        logger.info(
+                            "Existing ydotoold socket is functional.")
+                        return
+                except (subprocess.TimeoutExpired, FileNotFoundError,
+                        OSError) as exc:
+                    logger.debug("Existing socket check failed: %s", exc)
 
         # Socket is stale or missing — clean up and restart
         try:
@@ -448,12 +529,17 @@ class GnomeDriver(DesktopManager):
 
         try:
             subprocess.Popen(
-                [self.ydotoold_path, '--socket-path', self.socket],
+                [self.ydotoold_path, '--socket-path', self.socket,
+                 '--socket-perms', '0600'],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
             for _ in range(YDOTOOL_SOCKET_RETRIES):
                 if os.path.exists(self.socket):
-                    # 0o600: only the owner can inject input through this socket.
+                    # Belt and braces: --socket-perms asks the daemon to
+                    # create it private, the chmod here also closes the
+                    # window on daemons that ignore the option (an
+                    # un-chmoded 0755 socket is reachable by the whole
+                    # session for as long as it takes to notice).
                     os.chmod(self.socket, 0o600)
                     logger.info("ydotoold started with socket: %s", self.socket)
                     return
@@ -464,6 +550,30 @@ class GnomeDriver(DesktopManager):
         except OSError as exc:
             logger.error("Failed to start ydotoold: %s", exc)
 
+    def _apply_bridge_layout(self):
+        """Clamps into the union of the shell's monitors, not just the stage.
+
+        The stage size alone cannot describe a monitor stacked above or to
+        the left of the primary one (negative origin): coordinates there
+        used to be pinned back to (0, 0), which is issues #6 and #7. An
+        older bridge that does not export GetLayout answers with an error,
+        _bridge_call returns None and the stage box stays — the previous,
+        single-monitor behaviour.
+        """
+        layout = self._bridge_call('GetLayout', (), BRIDGE_CALL_TIMEOUT)
+        if layout is None or len(layout) < 4:
+            logger.debug("Bridge has no GetLayout: clamping to the stage box.")
+            return
+        try:
+            min_x, min_y, width, height = (int(layout[i]) for i in range(4))
+        except (TypeError, ValueError):
+            return
+        if width <= 0 or height <= 0:
+            return
+        self.bounds = (min_x, min_y, min_x + width, min_y + height)
+        logger.info("GNOME layout: %dx%d%+d%+d",
+                    width, height, min_x, min_y)
+
     def _detect_resolution(self):
         """Dynamic resolution detection for GNOME/Wayland."""
         # Prefer the bridge: GetScreenSize reports the shell's logical
@@ -472,8 +582,10 @@ class GnomeDriver(DesktopManager):
             size = self._bridge_call('GetScreenSize', (), BRIDGE_CALL_TIMEOUT)
             if size is not None and len(size) >= 2:
                 try:
-                    self.screen_width, self.screen_height = int(size[0]), int(size[1])
-                    if self.screen_width > 0 and self.screen_height > 0:
+                    width, height = int(size[0]), int(size[1])
+                    if width > 0 and height > 0:
+                        self.set_screen_size(width, height)
+                        self._apply_bridge_layout()
                         return
                 except (TypeError, ValueError, IndexError):
                     pass
@@ -491,8 +603,11 @@ class GnomeDriver(DesktopManager):
                 if '*' in line:
                     match = re.search(r'(\d+)x(\d+)', line)
                     if match:
-                        self.screen_width = int(match.group(1))
-                        self.screen_height = int(match.group(2))
+                        # set_screen_size (not raw attributes) so `bounds`
+                        # is a real box: xrandr reports the whole XWayland
+                        # screen, whose origin is always (0, 0).
+                        self.set_screen_size(int(match.group(1)),
+                                             int(match.group(2)))
                         return
         except (subprocess.CalledProcessError, FileNotFoundError,
                 subprocess.TimeoutExpired) as exc:
@@ -514,12 +629,12 @@ class GnomeDriver(DesktopManager):
                 )
                 match = re.search(pattern, out, re.DOTALL)
                 if match:
-                    self.screen_width = int(match.group(1))
-                    self.screen_height = int(match.group(2))
+                    self.set_screen_size(int(match.group(1)),
+                                         int(match.group(2)))
                     return
         except (subprocess.CalledProcessError, FileNotFoundError,
                 subprocess.TimeoutExpired) as exc:
             logger.debug("gdbus resolution detection failed: %s", exc)
 
-        self.screen_width, self.screen_height = FALLBACK_RESOLUTION
+        self.set_screen_size(*FALLBACK_RESOLUTION)
         logger.warning("Using fallback resolution: 1920x1080")

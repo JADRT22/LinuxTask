@@ -1,18 +1,31 @@
-import subprocess
-import time
-import logging
+# -*- coding: utf-8 -*-
+"""
+LinuxTask - kde_wayland.py
+Description: KDE Wayland driver using the xdg-desktop-portal
+             RemoteDesktop interface, with a KWin scripting probe for
+             reading the real pointer position.
+Author: JADRT22 (https://github.com/JADRT22)
+License: MIT
+"""
+
 import atexit
+import json
+import logging
 import os
+import re
+import secrets
+import subprocess
 import tempfile
+import threading
+import time
+
 import dbus
 import dbus.mainloop.glib
 import dbus.service
-from gi.repository import GLib
-import threading
-import re
 from evdev.ecodes import BTN_LEFT, BTN_MIDDLE, BTN_RIGHT
+from gi.repository import GLib
 
-from .base import DesktopManager, FALLBACK_RESOLUTION
+from .base import FALLBACK_RESOLUTION, DesktopManager
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +39,21 @@ BTN_MAP = {BTN_LEFT: 272, BTN_RIGHT: 273, BTN_MIDDLE: 274}
 # so this is the primary position source.
 _KWIN_PROBE_NAME = 'org.linuxtask.cursorprobe'
 _KWIN_SCRIPT_NAME = 'linuxtask_cursor_pos'
-_KWIN_SCRIPT = (
-    'var p = workspace.cursorPos;\n'
-    'callDBus("%s", "/", "%s", "result", p.x+","+p.y);\n'
-    % (_KWIN_PROBE_NAME, _KWIN_PROBE_NAME)
-)
+
+
+def _kwin_script(nonce):
+    """Source of the one-shot KWin script reporting workspace.cursorPos.
+
+    The nonce comes back as the first field of the payload, so a reply that
+    belongs to an earlier (timed-out) read can be told apart from the reply
+    this read is waiting for. kdotool uses the same callDBus mechanism.
+    """
+    return (
+        'callDBus("%s", "/", "%s", "result", "%d," + workspace.cursorPos.x '
+        '+ "," + workspace.cursorPos.y);\n'
+        % (_KWIN_PROBE_NAME, _KWIN_PROBE_NAME, nonce)
+    )
+
 
 # Degrade after repeated read failures: KWin's replies never arriving
 # (e.g. the GLib dispatch loop stopped) would stall every read for the
@@ -46,27 +69,63 @@ class _KwinCursorProbe(dbus.service.Object):
     Created AFTER the driver's GLib loop is running so incoming calls
     get dispatched. Each read resets the event/value buffer; reads are
     serialized by the driver's lock (one in-flight read at a time).
+
+    Two filters protect the value that playback's dead reckoning is built
+    on top of:
+
+    * sender — only the process that currently owns org.kde.KWin is
+      believed. The session bus is shared with every app the user runs, so
+      without this any of them could claim a cursor position of its choice
+      and steer the replayed clicks somewhere else.
+    * nonce — a reply from a read that already timed out is dropped instead
+      of being mistaken for the current read's answer.
+
+    With no trusted sender configured yet (name lookup failed) the filter
+    stays open: refusing every reply would turn a hard-to-reach KWin into a
+    dead read path.
     """
 
     def __init__(self, bus):
         self._event = threading.Event()
         self._value = None
+        self._nonce = None
+        self.expected_senders = set()
+        self.saw_rejection = False
+        self.rejected = 0
         super().__init__(conn=bus, object_path='/')
 
+    def trust_sender(self, unique_name):
+        """Records a bus name whose replies are accepted (org.kde.KWin's)."""
+        if unique_name:
+            self.expected_senders.add(str(unique_name))
+
     @dbus.service.method(_KWIN_PROBE_NAME, in_signature='s',
-                         out_signature='')
-    def result(self, payload):
-        self._value = str(payload)
+                         out_signature='', sender_keyword='sender')
+    def result(self, payload, sender=None):
+        if self.expected_senders and sender not in self.expected_senders:
+            self.rejected += 1
+            # Read by the driver outside this handler, where a blocking
+            # name lookup is allowed: KWin restarting gives this service a
+            # new unique name, and the stale one must be re-resolved.
+            self.saw_rejection = True
+            logger.warning(
+                "Ignoring cursor position reply from %s (not KWin).", sender)
+            return
+        fields = str(payload).split(',', 1)
+        if self._nonce is not None:
+            if len(fields) < 2 or fields[0] != self._nonce:
+                self.rejected += 1
+                logger.debug(
+                    "Ignoring stale cursor reply (nonce %s, expected %s).",
+                    fields[0] if fields else '', self._nonce)
+                return
+            self._value = fields[1]
+        else:
+            self._value = str(payload)
         self._event.set()
 
-    def reset(self):
-        # ponytail: stale-reply window — if a read times out and KWin's
-        # callDBus reply lands right after, the NEXT read could parse
-        # that late reply instead of its own. Benign today: the payload
-        # is still real compositor truth from a run that did execute
-        # (at most a position from a few ms earlier). Upgrade path if it
-        # ever matters: tag the payload with a per-read sequence number
-        # and ignore mismatches.
+    def reset(self, nonce=None):
+        self._nonce = None if nonce is None else str(nonce)
         self._value = None
         self._event.clear()
 
@@ -89,6 +148,9 @@ class KdeWaylandDriver(DesktopManager):
         self._portal_ready = False
         self._dbus_loop = None
         self._bus = None
+        # Cached unique name of org.freedesktop.portal.Desktop, used to
+        # verify who emitted a Response signal (see _portal_call).
+        self._portal_sender = None
         # KWin cursor-read plumbing (lazily built in _kwin_read_setup,
         # after _portal_init has started the GLib loop below).
         self._kwin_ready = False
@@ -110,9 +172,120 @@ class KdeWaylandDriver(DesktopManager):
         self._portal_init()
 
     def _detect_resolution(self):
-        # Prefer kscreen-doctor (native Wayland); xrandr only mirrors
-        # XWayland and may be absent. kscreen marks the active mode
-        # with '*' and uses ANSI colors, so strip escapes first.
+        """Detects the primary size and the whole layout box.
+
+        kscreen-doctor --json is the precise source (positions, modes,
+        enabled state) and gives every output, so the clamp box becomes the
+        union of the layout instead of the first output in the list. The
+        text listing and xrandr stay as fallbacks for older Plasma and for
+        XWayland sessions.
+        """
+        if self._detect_resolution_kscreen_json():
+            return
+        if self._detect_resolution_kscreen_text():
+            return
+        if self._detect_resolution_xrandr():
+            return
+        self.set_screen_size(*FALLBACK_RESOLUTION)
+        logger.warning("Using fallback resolution: 1920x1080")
+
+    @staticmethod
+    def _output_geometry(entry):
+        """Extracts (x, y, w, h, enabled, primary) from one kscreen entry.
+
+        The JSON shape has moved between Plasma releases (a bare list, a
+        wrapper object, and each output's fields living under 'output'), so
+        only the fields we need are read, defensively. Rotation is ignored:
+        kscreen reports the mode size, and a rotated output would then have
+        its width and height swapped — a wrong-but-inside-the-box estimate
+        is better than refusing the whole layout.
+        """
+        if not isinstance(entry, dict):
+            return None
+        data = entry.get('output') if isinstance(
+            entry.get('output'), dict) else entry
+        mode = data.get('mode') or data.get('currentMode') or {}
+        if isinstance(mode, dict):
+            size = mode.get('size') if isinstance(
+                mode.get('size'), dict) else mode
+        else:
+            return None
+        pos = data.get('pos') or data.get('position') or {}
+        try:
+            width = int(size.get('width', 0) or 0)
+            height = int(size.get('height', 0) or 0)
+        except (TypeError, ValueError):
+            return None
+        if width <= 0 or height <= 0:
+            return None
+        try:
+            x = int(pos.get('x', 0) or 0)
+            y = int(pos.get('y', 0) or 0)
+        except (TypeError, ValueError):
+            x = y = 0
+        return (
+            x, y, width, height,
+            bool(data.get('enabled', True)),
+            bool(data.get('primary'))
+        )
+
+    def _apply_outputs(self, geometries, source):
+        """Records the primary size and the union box of `geometries`."""
+        active = [g for g in geometries if g[4]]
+        if not active:
+            return False
+        primary = next((g for g in active if g[5]),
+                       next((g for g in active
+                             if g[0] == 0 and g[1] == 0), active[0]))
+        bounds = (
+            min(g[0] for g in active), min(g[1] for g in active),
+            max(g[0] + g[2] for g in active),
+            max(g[1] + g[3] for g in active)
+        )
+        self.set_screen_size(primary[2], primary[3], bounds)
+        logger.info(
+            "Resolution (%s): %dx%d, layout %dx%d%+d%+d",
+            source, primary[2], primary[3],
+            bounds[2] - bounds[0], bounds[3] - bounds[1],
+            bounds[0], bounds[1]
+        )
+        return True
+
+    def _detect_resolution_kscreen_json(self):
+        """Parses `kscreen-doctor --json`. True when it produced geometry."""
+        try:
+            out = subprocess.check_output(
+                ['kscreen-doctor', '--json'],
+                stderr=subprocess.DEVNULL, timeout=5
+            ).decode()
+            payload = json.loads(out)
+        except Exception as exc:
+            logger.debug("kscreen-doctor --json failed: %s", exc)
+            return False
+        if isinstance(payload, dict):
+            entries = payload.get('outputs')
+            if entries is None:
+                entries = [payload]
+        elif isinstance(payload, list):
+            entries = payload
+        else:
+            return False
+        if not isinstance(entries, list):
+            return False
+        geometries = [
+            g for g in (self._output_geometry(e) for e in entries) if g
+        ]
+        return self._apply_outputs(geometries, 'kscreen-json')
+
+    def _detect_resolution_kscreen_text(self):
+        """Parses the human `kscreen-doctor -o` listing for one output.
+
+        Only the active mode of each output line is read, and no position
+        information is available here, so the layout box cannot be
+        reconstructed: this path keeps the historical primary-only
+        behaviour. kscreen marks the active mode with '*' and uses ANSI
+        colors, so strip escapes first.
+        """
         try:
             out = subprocess.check_output(
                 ['kscreen-doctor', '-o'],
@@ -125,43 +298,100 @@ class KdeWaylandDriver(DesktopManager):
                 # grab the first mode on the line instead.
                 m = re.search(r'(\d+)x(\d+)@[0-9.]*\*', line)
                 if m:
-                    self.screen_width = int(m.group(1))
-                    self.screen_height = int(m.group(2))
+                    self.set_screen_size(int(m.group(1)), int(m.group(2)))
                     logger.info(
                         "Resolution (kscreen): %dx%d",
                         self.screen_width, self.screen_height)
-                    return
+                    return True
         except Exception as exc:
             logger.debug("kscreen-doctor failed: %s", exc)
+        return False
+
+    def _detect_resolution_xrandr(self):
+        """Falls back to xrandr, which does report output offsets.
+
+        xrandr only mirrors XWayland, so on a Wayland session this can be
+        wrong or empty; it is used only when kscreen gave nothing.
+        """
         try:
             out = subprocess.check_output(
                 ['xrandr'], stderr=subprocess.DEVNULL, timeout=2
             ).decode()
+        except Exception:
+            logger.debug("xrandr fallback failed.", exc_info=True)
+            return False
+        active = []
+        primary_seen = False
+        for line in out.splitlines():
+            if ' connected' not in line:
+                continue
+            is_primary = ' primary' in line
+            # '2560x1440+1920+0' carries both the size and the layout
+            # offset; the mode line below the connector repeats the size
+            # with a '*', but without an offset. xrandr writes the offset
+            # sign itself, so a negative Y reads '+2560-180' — matching
+            # only '+', as a naive pattern does, silently drops every
+            # monitor that sits above the primary one.
+            m = re.search(r'(\d+)x(\d+)([+-]\d+)([+-]\d+)', line)
+            if not m:
+                continue
+            x, y = int(m.group(3)), int(m.group(4))
+            width, height = int(m.group(1)), int(m.group(2))
+            active.append(
+                (x, y, width, height, True, is_primary or not primary_seen)
+            )
+            primary_seen = primary_seen or is_primary
+        if not active:
             for line in out.splitlines():
                 if '*' in line:
                     m = re.search(r'(\d+)x(\d+)', line)
                     if m:
-                        self.screen_width = int(m.group(1))
-                        self.screen_height = int(m.group(2))
+                        self.set_screen_size(
+                            int(m.group(1)), int(m.group(2)))
                         logger.info("Resolution: %dx%d",
                                     self.screen_width, self.screen_height)
-                        return
-        except Exception:
-            logger.debug("xrandr fallback failed.", exc_info=True)
-        self.screen_width, self.screen_height = FALLBACK_RESOLUTION
-        logger.warning("Using fallback resolution: 1920x1080")
+                        return True
+            return False
+        return self._apply_outputs(active, 'xrandr')
 
     def _predict_request_path(self, token):
         name = self._bus.get_unique_name().replace('.', '_').replace(':', '')
         return f"/org/freedesktop/portal/desktop/request/{name}/{token}"
 
+    def _portal_owner(self):
+        """Unique bus name of the portal, cached; None when unknown.
+
+        Used to check who really emitted a Response signal. Re-resolved
+        after a rejected signal, because a portal restart changes the name.
+        """
+        if self._portal_sender is not None:
+            return self._portal_sender
+        try:
+            self._portal_sender = str(self._bus.get_name_owner(
+                'org.freedesktop.portal.Desktop'))
+        except Exception as exc:
+            logger.debug("Could not resolve the portal owner: %s", exc)
+            self._portal_sender = None
+        return self._portal_sender
+
     def _portal_call(self, method, *args, timeout=15):
-        handle_token = f"ht_{int(time.time() * 1000000)}"
+        # Random, not time-derived: the request path is predictable from the
+        # token, and a predictable path plus an unfiltered match rule would
+        # let any process on the session bus answer a portal request.
+        handle_token = 'ht_%s' % secrets.token_hex(8)
         request_path = self._predict_request_path(handle_token)
         event = threading.Event()
         result_container = []
+        expected_sender = self._portal_owner()
 
-        def response_callback(*resp_args):
+        def response_callback(*resp_args, sender=None):
+            if expected_sender and sender != expected_sender:
+                logger.warning(
+                    "Ignoring portal Response from %s on %s.", sender,
+                    request_path)
+                # Drop the cached owner so the next call re-resolves it.
+                self._portal_sender = None
+                return
             logger.debug("Portal response signal: %s", resp_args)
             result_container.append(resp_args)
             event.set()
@@ -171,7 +401,8 @@ class KdeWaylandDriver(DesktopManager):
             response_callback,
             signal_name='Response',
             dbus_interface='org.freedesktop.portal.Request',
-            path=request_path
+            path=request_path,
+            sender_keyword='sender'
         )
 
         try:
@@ -359,7 +590,9 @@ class KdeWaylandDriver(DesktopManager):
                 f = os.fdopen(fd, 'w')
                 fd = None  # f owns the fd now; the with closes it
                 with f:
-                    f.write(_KWIN_SCRIPT)
+                    # Placeholder: every read rewrites this file with its
+                    # own nonce (see _kwin_write_script).
+                    f.write(_kwin_script(0))
             except Exception as exc:
                 logger.debug("KWin script temp file failed: %s", exc)
                 if fd is not None:  # fdopen failed: fd never closed
@@ -382,8 +615,42 @@ class KdeWaylandDriver(DesktopManager):
         except Exception as exc:
             logger.debug("KWin Scripting interface failed: %s", exc)
             return False
+        # Trust only KWin's replies, resolved here (outside the probe's own
+        # handler, where a blocking name lookup would re-enter the
+        # connection).
+        self._kwin_trust_kwin()
         self._kwin_ready = True
         return True
+
+    def _kwin_trust_kwin(self):
+        """Points the probe at the current unique name of org.kde.KWin."""
+        if self._kwin_probe is None or self._bus is None:
+            return
+        try:
+            owner = str(self._bus.get_name_owner('org.kde.KWin'))
+        except Exception as exc:
+            logger.debug("Could not resolve org.kde.KWin owner: %s", exc)
+            return
+        if owner:
+            self._kwin_probe.trust_sender(owner)
+
+    def _kwin_write_script(self, nonce):
+        """Writes this read's script (with its nonce) to the temp file.
+
+        True on success. The file is ours alone (mkstemp, 0600) and is
+        reloaded by KWin on every loadScript, so a per-read rewrite is the
+        cheapest way to tag replies.
+        """
+        if not self._kwin_script_path:
+            return False
+        try:
+            with open(self._kwin_script_path, 'w',
+                      encoding='utf-8') as script_file:
+                script_file.write(_kwin_script(nonce))
+            return True
+        except OSError as exc:
+            logger.debug("KWin script rewrite failed: %s", exc)
+            return False
 
     def _kwin_cleanup(self):
         """atexit: remove the script we loaded and the temp file we
@@ -450,6 +717,17 @@ class KdeWaylandDriver(DesktopManager):
                 self._kwin_fail_count += 1
                 return None
             try:
+                # A rejected reply means the KWin unique name the probe
+                # trusts is stale (KWin restarted): re-resolve it, then let
+                # this read tag its own nonce into the script.
+                if getattr(self._kwin_probe, 'saw_rejection', False) is True:
+                    self._kwin_trust_kwin()
+                    self._kwin_probe.saw_rejection = False
+                nonce = time.time_ns() % 1000000000
+                if not self._kwin_write_script(nonce):
+                    self._kwin_last_error = 'script write failed'
+                    self._kwin_fail_count += 1
+                    return None
                 sid = self._kwin_scripting.loadScript(
                     self._kwin_script_path, _KWIN_SCRIPT_NAME,
                     signature='ss')
@@ -473,7 +751,7 @@ class KdeWaylandDriver(DesktopManager):
                         self._bus.get_object(
                             'org.kde.KWin', '/Scripting/Script%s' % sid),
                         'org.kde.kwin.Script')
-                    self._kwin_probe.reset()
+                    self._kwin_probe.reset(nonce)
                     srun.run()
                     srun.stop()
                     if not self._kwin_probe.wait(2.0):
@@ -626,8 +904,12 @@ class KdeWaylandDriver(DesktopManager):
             self._cur_x, self._cur_y = pos
             self._pos_initialized = True
         else:
-            logger.debug("no live position available; tracking from (0, 0)",
-                         exc_info=True)
+            # No exception is active here, so no exc_info: this is the
+            # expected shape of a read that simply has no source available.
+            logger.debug(
+                "No live position available; staying cold so the next "
+                "move_cursor anchors instead of dead-reckoning from (0, 0)."
+            )
 
     def scroll(self, direction, clicks=1):
         """Performs scroll via portal. Returns True if handled."""
