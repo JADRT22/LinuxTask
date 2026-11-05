@@ -1,0 +1,31 @@
+# Development and CI tooling for LinuxTask.
+#
+# Runtime pins live in requirements.txt (that file is what tools/install.sh
+# and the AppImage build read); this one adds the test/lint layer on top.
+# Not installed on end-user machines, and deliberately not part of the
+# AppImage bundle.
+#
+#   python -m pip install -r requirements-dev.txt
+#   python -m pytest tests                      # or: pytest
+#   python -m ruff check .
+#
+# Versions here are what the suite is verified against; CI installs this
+# file, so bump them together with a full local run.
+-r requirements.txt
+
+pytest==9.1.1
+pytest-cov==7.1.0
+pytest-timeout==2.4.0
+ruff==0.17.3
+
+# Imported only by experimental/capture.py and experimental/vision.py and
+# their suite (tests/test_experimental_addons.py). The productive app does
+# not need them; CI installs them so the add-on suite is not silently
+# skipped, and tests/test_experimental_addons.py skips itself without them.
+numpy
+pillow
+
+# Still not pip-installable here (distro packages, needed to run
+# tests/test_kde_wayland.py): python3-dbus and python3-gi. The
+# `distro-bindings` CI job installs them from apt and runs that suite;
+# the matrix jobs skip it. See the note in requirements.txt.

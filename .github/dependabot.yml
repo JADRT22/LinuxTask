@@ -1,0 +1,37 @@
+# Dependabot: keep the pins honest without drowning the maintainer in PRs.
+#
+# Runtime dependencies are pinned deliberately (requirements.txt is what
+# CI installs and what tools/install.sh puts in .venv), so an update has
+# to be reviewed rather than merged blind — hence grouped PRs and a low
+# open-PR limit.
+#
+# Not covered here: the AppImage interpreter. python-build-standalone is
+# not a Dependabot ecosystem; it is pinned in
+# tools/appimage/python-build-standalone.lock and moved on purpose with
+# `python3 tools/appimage/update_python_lock.py --write`.
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  - package-ecosystem: "pip"
+    directories:
+      - "/"                    # requirements.txt, requirements-dev.txt, pyproject.toml
+      - "/tools/appimage"      # the staged project the AppImage builds
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"

@@ -27,3 +27,15 @@ squashfs-root/
 
 # Untracked local screenshot cache (README uses assets/demo.gif)
 assets/demo-v3.png
+
+# Tool caches and coverage output (pytest/ruff run in the repo root)
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# AI chat/session dumps left in the working tree while developing:
+# they are not project files, and `git add -A` picks them up.
+freebuff-chat-*.md

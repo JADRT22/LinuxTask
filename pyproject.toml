@@ -1,0 +1,114 @@
+# Root packaging and tooling configuration.
+#
+# Two files named pyproject.toml exist on purpose:
+#   * this one — dependency pins, Python floor, lint and test settings for
+#     working on the repository;
+#   * tools/appimage/pyproject.toml — the bundle's build config, which the
+#     AppImage tool reads while packaging (it must stay free of repo-wide
+#     settings).
+# `tools/release.py` mirrors APP_VERSION from src/main.py into both.
+
+[project]
+name = "linuxtask"
+version = "3.4.1"
+description = "Minimalist macro recorder for Linux: records and replays keyboard and mouse on Hyprland, Sway, GNOME Wayland, KDE Wayland and X11."
+readme = "README.md"
+# The floor is the one README and docs/CONTRIBUTING.md document and the one
+# tools/appimage/pyproject.toml declares. CI (python-app.yml) runs the suite
+# across it, so nothing 3.11+ may be added without widening that matrix.
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "JADRT22", url = "https://github.com/JADRT22" }]
+keywords = ["macro", "recorder", "automation", "wayland", "x11", "evdev"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Desktop Environment",
+]
+
+# Same pins as requirements.txt; keep the two in step (requirements.txt is
+# what tools/install.sh and the AppImage build install, and it carries the
+# commentary about the distro-only modules).
+dependencies = [
+    "customtkinter==6.0.0",
+    "evdev==2.0.0",
+    "python-xlib==0.33",
+]
+
+# Not pip-installable on most systems (they need native headers): the KDE
+# Wayland driver needs the distro packages python3-dbus and python3-gi.
+# tools/install.sh installs them per distribution.
+
+[project.optional-dependencies]
+# Mirror of requirements-dev.txt (that file is what CI installs, because
+# this project deliberately has no build-system, so `pip install .[dev]`
+# is not a path anyone should depend on).
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "pytest-timeout==2.4.0",
+    "ruff==0.17.3",
+]
+
+[project.urls]
+Homepage = "https://github.com/JADRT22/LinuxTask"
+Issues = "https://github.com/JADRT22/LinuxTask/issues"
+Changelog = "https://github.com/JADRT22/LinuxTask/blob/main/CHANGELOG.md"
+
+# The repository is not a normal installable package: src/ holds flat
+# modules (main.py, recorder.py, ...) and tools/install.sh runs them from
+# the project venv. Declaring no build-system on purpose — `pip install .`
+# is not a supported path, and the AppImage is built by
+# tools/appimage/build.sh.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Hardware- and session-bound suites live outside tests/ (see
+# .quarantine/tests) and are not collected.
+norecursedirs = [".quarantine", "build", "dist", ".venv", "node_modules"]
+
+[tool.ruff]
+line-length = 90
+target-version = "py310"
+src = ["src", "tests", "tools", "experimental"]
+extend-exclude = [
+    ".quarantine",
+    "build",
+]
+
+[tool.ruff.lint]
+# The intentional-broad-exception style of this codebase (a driver must
+# never take the UI down with it) is BLE001 territory; that rule is left
+# off rather than noqa'd 37 times. What is enabled here catches the
+# mistakes that actually bite: unused/stale imports, undefined names,
+# redefinitions, exception chaining, and mutable default arguments.
+select = ["E", "F", "W", "I", "B", "C4", "UP", "RUF100"]
+ignore = [
+    "E501",     # line length is advisory at 90; reformatting churn is noise
+    "B008",     # function call in default argument is Tkinter idiom here
+    # Imports after a bootstrap statement are the shape of this codebase:
+    # main.py guards its dependencies with a try/except that prints install
+    # instructions, and the tools and add-ons extend sys.path before
+    # importing drivers. The order is deliberate, so the rule is off — and
+    # the `# noqa: E402` markers it used to need were dead weight (removed).
+    "E402",
+    # Every source file opens with the house header (coding line + a
+    # Description/Author/License docstring). Python 3 assumes UTF-8, so the
+    # line is redundant, but deleting it is 39 deliberate edits, not drift.
+    "UP009",
+    # Logging and CLI messages are %-formatted throughout (`"%s: %d" % ()`),
+    # a style choice; converting 32 sites is a separate change.
+    "UP031",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Sorting is not attempted in the add-on scripts: their import blocks sit
+# inside functions that first extend sys.path.
+"experimental/color_spin/*" = ["I001"]
+"experimental/image_click/*" = ["I001"]
+# Fakes in the flow tests redefine module names on purpose.
+"tests/*" = ["F811"]
