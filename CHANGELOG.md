@@ -12,25 +12,119 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [v3.5.0] - 2026-11-05
 
-### Changed
-- Guard the runner-only failures the first CI run produced
-- Give the distro-bindings job the Tk bindings its interpreter lacks
-- Skip the contract KDE case without the distro dbus bindings
-- Multi-monitor behaviour, the new toolchain, how to report a bug
-- Pin the interpreter, verify it, attach the artifact
-- Run the suite on every supported Python, plus lint and bindings
-- Put src on sys.path once and clear the lint fallout
-- Add root pyproject, dev requirements, Dependabot
+The point of this release is playing a macro back across more than one
+monitor: a recording made on a second screen no longer folds onto the first
+one (#6, #7). The second visible change is that `v3.5.0` is the first release
+that carries an AppImage - the build existed and worked, but nothing published
+it, so the download the README pointed at was never there. Everything else is
+what those two changes exposed: the installer stopped running `pip install` on
+launch, the Wayland IPC paths started checking who answers, and CI now runs
+the suite on every Python the project promises rather than on the one that
+happened to be configured.
 
 ### Fixed
-- Make Python 3.10 resolvable and Pillow's Tk glue present
-- Source-build the evdev wheel, never reuse pip's cache
-- Never pip-install at launch, and stop eval'ing usernames
-- Make humanize real and keep Tk reads on the UI thread
-- Clamp the pointer to the union of every output
+- **Multi-monitor playback (#6, #7).** The clamp box is the union of every
+  enabled output rather than the geometry of the single output the driver
+  happened to read, so coordinates on a second screen - or one placed left of
+  or above the origin - are legal space and not an edge. Hyprland enumerates
+  `hyprctl monitors -j`, Sway `swaymsg -t get_outputs`, KDE takes the union
+  from `kscreen-doctor --json` with the text listing and `xrandr` as
+  fallbacks (that pattern now accepts a negative offset, which the old
+  `+`-only regex silently dropped for every monitor above the primary), and
+  X11's root window already spans every CRTC. A detection that finds nothing
+  falls back to 1920x1080 instead of a 0x0 box that pins the whole timeline
+  to one pixel in silence.
+- **A compositor refusal is honoured again.** `move_cursor`/`move_relative`
+  return a bool across all five drivers, so playback's `uinput` warp fallback
+  is reachable when the driver says no - and it warps the clamped coordinates
+  rather than the raw event.
+- **"Humanize" does what the label claimed.** Point jitter, delta jitter (up
+  to 2 px per axis) and inter-event timing variance (0-3 % on top of the speed
+  factor) are three primitives now; the old helper jittered nothing and only
+  ever saw the delta path.
+- **Settings stop going intermittent on long replays.** Speed and humanize
+  are read through plain attributes that the Tk variables mirror, because
+  reading a Tkinter variable from the replay thread is not safe.
+- **The first events of a recording are no longer dropped:** `toggle_record`
+  arms the capture thread last, since `device_loop` starts as soon as the flag
+  is true.
+- **A missing compositor dependency raises a dialog instead of killing the
+  window** (`python3-dbus` absent on KDE Wayland, an unsupported desktop), and
+  the title bar derives the desktop name from the driver in use.
+- **`tools/run.sh` never installs packages at launch.** It checks the three
+  imports it needs, names the script that fixes them and exits; the automatic
+  `pip install --user` it replaced could half-populate a user site, fail on a
+  managed environment, or reach the network on every start.
+- **`tools/install.sh` stopped expanding a username through `eval`** in favour
+  of a `getent passwd` lookup retried by uid, with an undeterminable home as a
+  hard error; on GNOME Wayland it now installs `ydotool` and verifies both the
+  client and `ydotoold`, because absolute warps need the daemon.
+- **Python 3.10 installs again.** evdev 2.0 declares `Requires-Python >=3.11`
+  while the pin carried no marker, so pip could not resolve it there - which
+  made `tools/install.sh` fail on Ubuntu 22.04 and Debian 11 and advertised a
+  support floor that was a claim rather than a fact. The pin is split by
+  interpreter now (2.0.0 on >=3.11, 1.9.3 on 3.10), and CI exercises both -
+  the 1.x branch is also what the distro `python3-evdev` packages ship.
+- **The AppImage bundles a working evdev.** pip's global wheel cache is keyed
+  by name and ABI, not by whether the C extensions actually compiled, so a
+  stale cache entry from an earlier failed build shipped a wheel whose
+  `import evdev` died on the user's machine. evdev is now source-built against
+  the bundled interpreter's ABI with `--no-cache-dir`, and every wheel is
+  checked for a `.so` before the build continues.
 
 ### Security
-- Verify D-Bus senders and the bridge caller UID
+- **The Wayland IPC paths verify who answers.** On a shared session bus any
+  process could reply to the KWin scripting probe or emit a portal `Response`
+  signal, and the GNOME Shell bridge accepted warp requests from anyone. KDE
+  now trusts only replies from the cached unique names of `org.kde.KWin` and
+  `org.freedesktop.portal.Desktop`, tags every read with its own nonce so a
+  reply cannot be replayed from an earlier one, and uses a random request
+  handle instead of a time-derived one. The GJS extension refuses an
+  invocation whose uid is not the uid it runs as, and the Python side confirms
+  the bridge's owner through `GetConnectionUnixUser` before believing a
+  coordinate. The rule throughout: fail-open only for the first call, while no
+  name is known yet; fail-closed on a mismatch.
+- **`SECURITY.md` replaced a template with this app's actual threat model** -
+  what is in scope (command injection through `hyprctl`/`swaymsg`/`xdotool`/
+  `ydotool`/`gdbus`/`kscreen-doctor`/`xrandr`, the D-Bus and portal trust
+  decisions, the GNOME bridge), what is not, and that disclosures go to the
+  private advisory form rather than an issue.
+
+### Changed
+- **The release carries the AppImage.** `release.yml` gained a job that
+  installs the build dependencies, runs `tools/appimage/build.sh`, refuses an
+  empty artifact and attaches the result to the release the previous job
+  created. The build publishes it at the documented
+  `build/appimage/dist/LinuxTask-x86_64.AppImage`, which is the path the
+  workflow attaches and was not the path the builder produced.
+- **The bundled interpreter is pinned and verified.**
+  `tools/appimage/python-build-standalone.lock` records the release tag, the
+  Python version, the URL and the sha256; `build.sh` refuses an incomplete
+  pin or a URL that disagrees with its own tag, re-downloads a cached tarball
+  whose digest stopped matching, and publishes the cache only after
+  `sha256sum --check`. `update_python_lock.py` re-pins from the release API.
+  The ASCII toolbar rewrite moved out of a heredoc into `patch_ui.py`,
+  asserted against the real `src/main.py`.
+- **CI is three jobs instead of one hand-listed script**: a matrix over
+  3.10/3.11/3.12/3.13/3.14 running pytest with coverage and then
+  `unittest discover` (README documents it as the no-pytest path), a
+  `distro-bindings` job on ubuntu-24.04 where the KDE driver's suite actually
+  runs, and a ruff lint job. The suites that need a distro-only binding skip
+  instead of erroring when it is absent, and the runners got the packages a
+  distribution CPython does not build in (`python3-tk`, `python3-pil.imagetk`).
+- **Tooling at the repository root**: `pyproject.toml` with the pins, the
+  Python floor and the lint/test configuration, `requirements-dev.txt`,
+  `tests/__init__.py` doing the `sys.path` insert once instead of ten test
+  files repeating it, and Dependabot for pip and Actions.
+- **Documentation:** the README's multi-monitor section describes the layout
+  box the drivers now read and names the
+  `<driver> resolution: WxH, layout WxH+X+Y` start-up line as the thing to
+  paste into a report; the troubleshooting table gained the wrong-monitor row;
+  the development section describes what actually runs, and
+  `docs/CONTRIBUTING.md` points at `SECURITY.md`.
+- **Test suite: 175 tests at v3.4.1, 294 here**, passing on every interpreter
+  CI covers, with the cross-driver contract suite pinning the bool return, the
+  layout union and the log shape.
 
 ## [v3.4.1] - 2026-10-24
 
