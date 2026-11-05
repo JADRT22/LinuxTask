@@ -6,15 +6,11 @@ Author: JADRT22 (https://github.com/JADRT22)
 License: MIT
 """
 
-import sys
 import os
 import tempfile
 import unittest
-from unittest.mock import MagicMock
 
 # Adjust path to import drivers
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
-
 from drivers.gnome import GnomeDriver
 
 # os.unlink is patched during setUp, so temp files are removed with this

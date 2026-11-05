@@ -54,14 +54,15 @@ def grab_screen(**kwargs):
     cmd.append("-")
     try:
         png = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True
+            cmd, capture_output=True, check=True
         ).stdout
-    except FileNotFoundError:
-        raise RuntimeError("grim não encontrado. Instale com: pacman -S grim")
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "grim não encontrado. Instale com: pacman -S grim") from exc
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(
             "grim falhou: %s" % exc.stderr.decode(errors="replace").strip()
-        )
+        ) from exc
     return np.asarray(Image.open(io.BytesIO(png)).convert("RGB"))
 
 

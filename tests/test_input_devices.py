@@ -10,14 +10,10 @@ Author: JADRT22 (https://github.com/JADRT22)
 License: MIT
 """
 
-import os
-import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
-
-import main  # noqa: E402  (imports customtkinter/evdev, but no display touched)
+import main
 
 
 def make_app():

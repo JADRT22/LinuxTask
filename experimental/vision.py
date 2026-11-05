@@ -19,7 +19,6 @@ Algorithm proven experimentally (experimental/image_click/): score
 
 import base64
 import io
-import logging
 
 import numpy as np
 from PIL import Image

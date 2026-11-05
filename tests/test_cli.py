@@ -13,16 +13,14 @@ import contextlib
 import io
 import json
 import os
-import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+from evdev import ecodes as e
 
-import cli  # noqa: E402
-import main  # noqa: E402  (imports customtkinter, but no display touched)
-from evdev import ecodes as e  # noqa: E402
+import cli
+import main
 
 
 class MacroFileMixin(unittest.TestCase):

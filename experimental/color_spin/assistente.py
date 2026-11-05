@@ -37,14 +37,14 @@ for p in (os.path.join(_HERE, "..", "..", "src"),
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import numpy as np  # noqa: E402
-from PIL import Image, ImageTk  # noqa: E402
-import tkinter as tk  # noqa: E402
+import numpy as np
+from PIL import Image, ImageTk
+import tkinter as tk
 
-import capture as cap  # noqa: E402
-from drivers.hyprland import HyprlandDriver  # noqa: E402
-from image_click import UInputClicker  # noqa: E402
-from spin_until_color import (  # noqa: E402
+import capture as cap
+from drivers.hyprland import HyprlandDriver
+from image_click import UInputClicker
+from spin_until_color import (
     color_fraction, wait_region_stable,
 )
 

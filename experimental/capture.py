@@ -14,8 +14,8 @@ raise NotImplementedError with a clear message; capture_backend() picks
 the right backend from the same env vars the driver factory uses.
 """
 
-import logging
 import io
+import logging
 import os
 import subprocess
 import time
@@ -53,19 +53,18 @@ class GrimCapture:
         cmd.append("-")
         try:
             png = subprocess.run(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                check=True,
+                cmd, capture_output=True, check=True,
             ).stdout
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             raise CaptureError(
                 "grim não encontrado. Instale com: pacman -S grim "
                 "(ou o equivalente da sua distro)"
-            )
+            ) from exc
         except subprocess.CalledProcessError as exc:
             raise CaptureError(
                 "grim falhou: %s"
                 % exc.stderr.decode(errors="replace").strip()
-            )
+            ) from exc
         return np.asarray(Image.open(io.BytesIO(png))
                           .convert("RGB"))
 
@@ -76,11 +75,11 @@ class GrimCapture:
         """
         try:
             geom = subprocess.check_output(["slurp"]).decode().strip()
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             raise CaptureError(
                 "slurp não encontrado. Instale com: pacman -S slurp "
                 "(ou o equivalente da sua distro)"
-            )
+            ) from exc
         except subprocess.CalledProcessError:
             return None  # user pressed Esc
 
@@ -90,8 +89,9 @@ class GrimCapture:
             w_s, _, h_s = size.lower().partition("x")
             x, y = int(x_s), int(y_s)
             w, h = int(w_s), int(h_s)
-        except ValueError:
-            raise CaptureError(f"geometria inesperada do slurp: {geom!r}")
+        except ValueError as exc:
+            raise CaptureError(
+                f"geometria inesperada do slurp: {geom!r}") from exc
         if w <= 0 or h <= 0:
             return None
         return (x, y, w, h)
@@ -116,18 +116,17 @@ class GrimCapture:
         cmd.append("-")
         try:
             png = subprocess.run(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                check=True,
+                cmd, capture_output=True, check=True,
             ).stdout
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             raise CaptureError(
                 "grim não encontrado. Instale com: pacman -S grim"
-            )
+            ) from exc
         except subprocess.CalledProcessError as exc:
             raise CaptureError(
                 "grim falhou: %s"
                 % exc.stderr.decode(errors="replace").strip()
-            )
+            ) from exc
         return np.asarray(Image.open(io.BytesIO(png))
                           .convert("RGB"))
 

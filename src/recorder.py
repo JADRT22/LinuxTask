@@ -9,9 +9,9 @@ Author: JADRT22 (https://github.com/JADRT22)
 License: MIT
 """
 
-import time
-import threading
 import logging
+import threading
+import time
 
 import evdev
 from evdev import ecodes as e
