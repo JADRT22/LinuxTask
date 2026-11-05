@@ -285,4 +285,13 @@ print('ok', linuxtask_main.APP_VERSION)
     exit 1
 fi
 echo "smoke guard: $(cat "$SMOKE_DIR/smoke.out")"
-echo "--- done: $PROJ/dist/LinuxTask-x86_64.AppImage ---"
+# Publish the artifact at the path the header documents. The builder writes
+# into the staging project's own dist/, and nothing outside this script
+# should have to know that: release.yml attaches
+# build/appimage/dist/LinuxTask-x86_64.AppImage, which did not exist, so the
+# job would have died at "Verify the artifact exists" and released without
+# the file the README tells people to download. Only a build that passed the
+# smoke guard reaches this copy.
+mkdir -p "$STAGE/dist"
+cp -f "$PROJ/dist/LinuxTask-x86_64.AppImage" "$STAGE/dist/"
+echo "--- done: $STAGE/dist/LinuxTask-x86_64.AppImage ---"
