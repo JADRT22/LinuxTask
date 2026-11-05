@@ -9,19 +9,35 @@ Author: JADRT22 (https://github.com/JADRT22)
 License: MIT
 """
 
-import os
 import json
-import time
+import logging
+import os
 import random
 import threading
-import logging
+import time
 import traceback
-
-import evdev
-from evdev import ecodes as e
 from tkinter import filedialog
 
+from evdev import ecodes as e
+
 logger = logging.getLogger("LinuxTask")
+
+
+def save_macro_file(path, macro_data):
+    """Writes a macro JSON readable only by its owner (0600).
+
+    A macro file contains every keystroke captured between Record and Stop,
+    so it must not land world-readable: the file is created with O_CREAT and
+    mode 0600 (no 0644 window before a chmod) and an existing file is
+    tightened, because writing into it does not change its mode otherwise.
+    """
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fp:
+        json.dump(macro_data, fp, indent=2)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        logger.debug("Could not tighten permissions on %s", path)
 
 
 class Playback:
@@ -48,14 +64,66 @@ class Playback:
         self.btn_play.configure(text="■", fg_color="#b71c1c")
         threading.Thread(target=self.playback_thread, daemon=True).start()
 
-    def _apply_humanize(self, dx, dy, delay):
-        """Applies jitter to movement and timing if humanize is enabled."""
-        if not self.humanize_enabled.get():
-            return dx, dy, delay
-        jitter_x = random.randint(-2, 2)
-        jitter_y = random.randint(-2, 2)
-        time_variance = delay * random.uniform(0, 0.03)
-        return dx + jitter_x, dy + jitter_y, delay + time_variance
+    def _setting_speed(self):
+        """Playback speed, read without touching Tk from this thread.
+
+        main.py mirrors speed_var into self._speed_value from a Tk trace
+        (UI thread), which is what the worker reads; the headless CLI sets
+        the same attribute directly. Bare instances built through __new__
+        have no mirror, so the .get() fallback keeps them (and _Value
+        doubles) working. __dict__ lookups, not getattr(): this class is
+        mixed into a Tkinter widget, whose __getattr__ recurses on a
+        missing attribute.
+        """
+        value = self.__dict__.get('_speed_value')
+        if isinstance(value, (int, float)):
+            return float(value) or 1.0
+        try:
+            return float(str(self.speed_var.get()).replace("x", "").strip())
+        except (AttributeError, ValueError, TypeError):
+            return 1.0
+
+    def _setting_humanize(self):
+        """Humanize switch, read without touching Tk (see _setting_speed)."""
+        value = self.__dict__.get('_humanize_value')
+        if value is not None:
+            return bool(value)
+        try:
+            return bool(self.humanize_enabled.get())
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+    def _humanize_jitter(self):
+        """(±2 px, ±2 px) when humanize is on, (0, 0) when it is off."""
+        if not self._setting_humanize():
+            return 0, 0
+        return random.randint(-2, 2), random.randint(-2, 2)
+
+    def _humanize_point(self, x, y):
+        """Jittered absolute target for a 'pos' event."""
+        jx, jy = self._humanize_jitter()
+        return x + jx, y + jy
+
+    def _humanize_delta(self, dx, dy):
+        """Jittered relative move for a 'rel' event."""
+        jx, jy = self._humanize_jitter()
+        return dx + jx, dy + jy
+
+    def _humanize_gap_delay(self, gap):
+        """Extra wait for one event: 0-3% of the gap to the next event.
+
+        Applied per event on top of the absolute schedule, so the variance
+        cannot accumulate into a drift of the whole macro.
+        """
+        if gap <= 0 or not self._setting_humanize():
+            return 0.0
+        return gap * random.uniform(0, 0.03)
+
+    def _event_gap(self, events, i, speed):
+        """Time (s) between event i and the next one, already speed-scaled."""
+        if i + 1 >= len(events):
+            return 0.0
+        return (events[i + 1]['time'] - events[i]['time']) / speed
 
     def playback_thread(self):
         """Main playback loop, runs in a background thread."""
@@ -126,10 +194,7 @@ class Playback:
                     time.sleep(0.01)
 
                 start_p = time.monotonic()
-                try:
-                    speed = float(self.speed_var.get().replace("x", ""))
-                except (ValueError, AttributeError):
-                    speed = 1.0
+                speed = self._setting_speed()
 
                 with self.events_lock:
                     events_copy = list(self.events)
@@ -154,7 +219,14 @@ class Playback:
                     # math reads ev['time'] too, so it belongs inside this try.
                     attempted_events += 1
                     try:
-                        target_time = start_p + (ev['time'] / speed)
+                        # Humanize shifts this one event later by a fraction
+                        # of the gap that follows it; the schedule stays
+                        # absolute, so the shifts cannot add up.
+                        target_time = (
+                            start_p + (ev['time'] / speed)
+                            + self._humanize_gap_delay(
+                                self._event_gap(events_copy, i, speed))
+                        )
                         remaining = target_time - time.monotonic()
                         if remaining > 0:
                             # Sliced wait: Stop/F9 takes effect promptly
@@ -170,19 +242,16 @@ class Playback:
                             break
 
                         if ev['type'] == "pos":
-                            if self.manager.move_cursor(ev['x'], ev['y']) is False:
+                            x, y = self._humanize_point(ev['x'], ev['y'])
+                            if self.manager.move_cursor(x, y) is False:
                                 note_decline()
                                 # The virtual device is second choice, not
                                 # a skip: an absolute macro is otherwise
                                 # replayed as nothing at all.
-                                warp_uinput(ev['x'], ev['y'])
+                                warp_uinput(x, y)
 
                         elif ev['type'] == "rel":
-                            dx, dy = ev['dx'], ev['dy']
-                            delay = 0
-                            if self.humanize_enabled.get() and i + 1 < len(events_copy):
-                                delay = (events_copy[i + 1]['time'] - ev['time']) / speed
-                                dx, dy, delay = self._apply_humanize(dx, dy, delay)
+                            dx, dy = self._humanize_delta(ev['dx'], ev['dy'])
 
                             handled = self.manager.move_relative(dx, dy)
                             if not handled:
@@ -274,8 +343,7 @@ class Playback:
                     "start_pos": self.start_cursor_pos,
                     "events": events_copy
                 }
-                with open(f, 'w', encoding="utf-8") as fp:
-                    json.dump(macro_data, fp, indent=2)
+                save_macro_file(f, macro_data)
                 logger.info("Macro saved to %s (%d events).", os.path.basename(f), len(events_copy))
             except OSError as exc:
                 logger.error("Failed to save file: %s", exc)
@@ -309,7 +377,7 @@ class Playback:
         )
         if f:
             try:
-                with open(f, 'r', encoding="utf-8") as fp:
+                with open(f, encoding="utf-8") as fp:
                     data = json.load(fp)
                 if isinstance(data, dict):
                     raw_events = data.get("events", [])

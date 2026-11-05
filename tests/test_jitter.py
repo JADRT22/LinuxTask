@@ -9,6 +9,7 @@ License: MIT
 import random
 import unittest
 
+
 # Mocking the jitter logic from the main app for isolated testing
 def apply_jitter(x, y, enabled=True):
     if not enabled:

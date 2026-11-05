@@ -22,8 +22,8 @@ import evdev
 from evdev import ecodes as e
 
 from drivers.factory import AutoDetectDriver
-from recorder import VIRTUAL_DEVICE_NAME
 from playback import Playback
+from recorder import VIRTUAL_DEVICE_NAME
 
 logger = logging.getLogger("LinuxTask")
 
@@ -58,6 +58,12 @@ class HeadlessPlayer(Playback):
         self.playing = False
         self.loop_enabled = loop
         self.start_cursor_pos = None
+        # Plain mirrors of the GUI's Tk switches: playback reads these
+        # first (no Tkinter variable exists here, and none may be touched
+        # off the UI thread). The _Value objects stay for callers that
+        # inspect the same surface the window exposes.
+        self._speed_value = float(speed)
+        self._humanize_value = bool(humanize)
         self.speed_var = _Value("%s" % speed)
         self.humanize_enabled = _Value(bool(humanize))
         # playback_thread reports completion and driver skips here; the
@@ -71,7 +77,7 @@ class HeadlessPlayer(Playback):
         keeps the two paths honest) but without the file dialog, which
         needs a display.
         """
-        with open(path, "r", encoding="utf-8") as fp:
+        with open(path, encoding="utf-8") as fp:
             data = json.load(fp)
         start_pos = None
         if isinstance(data, dict):
@@ -104,9 +110,9 @@ def _point(text):
     try:
         xs, ys = text.split(",")
         return (int(xs), int(ys))
-    except ValueError:
+    except ValueError as exc:
         raise argparse.ArgumentTypeError(
-            "expected 'X,Y' in screen pixels, e.g. 400,300")
+            "expected 'X,Y' in screen pixels, e.g. 400,300") from exc
 
 
 def _create_uinput():
@@ -125,6 +131,48 @@ def _create_uinput():
             "UInput unavailable (%s): keyboard replay and the driver "
             "fallbacks are disabled. Re-run ./tools/install.sh.", exc)
         return None
+
+
+def _describe(ev):
+    """One-line description of a macro event, for --show."""
+    kind = ev.get("type")
+    if kind == "pos":
+        return "move to (%d, %d)" % (ev.get("x", 0), ev.get("y", 0))
+    if kind == "rel":
+        return "move by (%d, %d)" % (ev.get("dx", 0), ev.get("dy", 0))
+    if kind == "scroll":
+        return "scroll %s x%d" % (ev.get("direction"), ev.get("clicks", 1))
+    if kind == "key":
+        name = e.KEY.get(ev.get("code"), ev.get("code"))
+        if isinstance(name, list):
+            name = name[0]
+        state = {1: "press", 0: "release", 2: "hold"}.get(
+            ev.get("val"), "val=%s" % ev.get("val"))
+        return "%s %s" % (state, name)
+    return str(ev)
+
+
+def _print_macro(player, args):
+    """Prints what would be replayed, and the key codes it contains.
+
+    A macro file is a recording of every keystroke, so `--show` doubles as
+    the check to run on a file received from somebody else: it prints the
+    events before a single one is injected.
+    """
+    print("macro: %s" % args.file)
+    print("events: %d" % len(player.events))
+    if player.start_cursor_pos is not None:
+        print("start_pos: %d,%d" % player.start_cursor_pos)
+    else:
+        print("start_pos: (none recorded; replays from the live cursor)")
+    keys = sorted({ev["code"] for ev in player.events
+                   if ev.get("type") == "key"})
+    if keys:
+        print("key codes used: %d (includes text input — treat this file "
+              "like a private key)" % len(keys))
+    if args.show:
+        for i, ev in enumerate(player.events):
+            print("  %4d  %8.3fs  %s" % (i, ev.get("time", 0.0), _describe(ev)))
 
 
 def run_play(args):
@@ -151,6 +199,12 @@ def run_play(args):
         # read the cursor, a relative macro only repeats when it
         # starts where it started before.
         player.start_cursor_pos = args.start_pos
+
+    if args.show or args.dry_run:
+        _print_macro(player, args)
+        print("dry run: nothing was injected" if args.dry_run
+              else "nothing was injected")
+        return 0
 
     # Only now touch the compositor: a bad file must not open a portal
     # authorization dialog or need input permissions.
@@ -203,7 +257,17 @@ def build_parser():
         "--loop", action="store_true", help="keep replaying until Ctrl+C")
     play.add_argument(
         "--humanize", action="store_true",
-        help="add +/-2px jitter and 0-3%% timing variance")
+        help="add +/-2px jitter to recorded positions and relative moves, "
+             "and shift each event by 0-3%% of the gap that follows it")
+    play.add_argument(
+        "--show", action="store_true",
+        help="print every event the macro contains (including key presses) "
+             "and exit without injecting anything — read this before "
+             "replaying a file you did not record yourself")
+    play.add_argument(
+        "--dry-run", action="store_true",
+        help="validate the macro and print a summary without creating a "
+             "virtual device, a driver session or any input")
     play.add_argument("-v", "--verbose", action="store_true",
                       help="debug logging")
     play.set_defaults(func=run_play)

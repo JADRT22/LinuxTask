@@ -6,8 +6,8 @@ Author: JADRT22 (https://github.com/JADRT22)
 License: MIT
 """
 
-import sys
 import logging
+import sys
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,20 +30,23 @@ except ImportError:
           file=sys.stderr)
     sys.exit(1)
 
-import time
-import threading
 import json
 import os
 import queue
+import threading
+import time
 import tkinter
 from collections import deque
+
 # filedialog must stay bound in this module: tests patch('main.filedialog...').
-from tkinter import filedialog
+from tkinter import filedialog  # noqa: F401
+
 from drivers.factory import AutoDetectDriver
+from playback import Playback
+
 # Capture/playback live in their own modules and are mixed in below, so the
 # public surface (LinuxTaskApp.<method>) is unchanged for callers and tests.
-from recorder import Recorder, VIRTUAL_DEVICE_NAME
-from playback import Playback
+from recorder import VIRTUAL_DEVICE_NAME, Recorder
 
 APP_VERSION = "3.4.1"
 
@@ -119,28 +122,26 @@ class ToolTip:
 
 
 class LinuxTaskApp(ctk.CTk, Recorder, Playback):
+    # Window-title label per driver class name ("GnomeDriver" -> "GNOME").
+    EDITION_NAMES = {
+        "X11": "X11",
+        "Gnome": "GNOME",
+        "KdeWayland": "KDE Wayland",
+        "Hyprland": "Hyprland",
+        "Sway": "Sway",
+    }
+
     def __init__(self):
         super().__init__()
-        try:
-            self.manager = AutoDetectDriver()
-        except RuntimeError as exc:
-            # Missing system deps (e.g. python3-dbus on KDE Wayland) or an
-            # unsupported desktop. Show a visible dialog, not a traceback.
-            logger.error("Driver initialization failed: %s", exc)
-            try:
-                import tkinter.messagebox as mb
-                mb.showerror("LinuxTask - Initialization failed", str(exc))
-            except Exception:
-                logger.debug("Failed to show error dialog.", exc_info=True)
-            sys.exit(1)
-        env_name = self.manager.__class__.__name__.replace("Driver", "")
-        if env_name == "X11": env_name = "X11 Edition"
-        elif env_name == "Gnome": env_name = "GNOME Edition"
-        elif env_name == "KdeWayland": env_name = "KDE Wayland Edition"
-        elif env_name == "Hyprland": env_name = "Hyprland Edition"
-        elif env_name == "Sway": env_name = "Sway Edition"
-        else: env_name = f"{env_name} Edition"
-        self.title(f"LinuxTask v{APP_VERSION} - {env_name}")
+        # A RuntimeError here (missing system deps such as python3-dbus on
+        # KDE Wayland, or an unsupported desktop) is main()'s to report:
+        # sys.exit() from a constructor leaves a half-built Tk root behind
+        # and gives the caller no way to recover.
+        self.manager = AutoDetectDriver()
+        env_name = self.EDITION_NAMES.get(
+            self.manager.__class__.__name__.replace("Driver", ""),
+            self.manager.__class__.__name__.replace("Driver", ""))
+        self.title(f"LinuxTask v{APP_VERSION} - {env_name} Edition")
         # Compact toolbar (TinyTask-inspired): 400x44 instead of 420x50.
         self.geometry("400x44")
         self.attributes("-topmost", True)
@@ -250,6 +251,7 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
             dropdown_hover_color=UI_NEUTRAL_HOVER,
         )
         self.speed_menu.grid(row=0, column=5, padx=2, pady=2)
+        self._bind_playback_settings()
 
         self.btn_settings = ctk.CTkButton(
             self, text="⚙", fg_color="transparent",
@@ -421,7 +423,7 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
     def _load_app_config(self):
         """Read the persistent config; return {} on any problem."""
         try:
-            with open(self._config_path(), "r", encoding="utf-8") as fh:
+            with open(self._config_path(), encoding="utf-8") as fh:
                 cfg = json.load(fh)
             return cfg if isinstance(cfg, dict) else {}
         except (OSError, ValueError) as exc:
@@ -519,6 +521,31 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         except queue.Empty:
             pass
 
+    def _bind_playback_settings(self):
+        """Mirrors the Tk playback switches into plain python attributes.
+
+        Tk is single-threaded, so the playback worker must not call
+        speed_var.get()/humanize_enabled.get() — that is an unguarded Tcl
+        round trip from another thread. The traces below run on the UI
+        thread, so the worker reads plain float/bool attributes and a
+        mid-playback change still takes effect (see playback.py
+        _setting_speed/_setting_humanize).
+        """
+        def _sync_speed(*_args):
+            try:
+                self._speed_value = float(
+                    str(self.speed_var.get()).replace("x", "").strip())
+            except (ValueError, TypeError):
+                self._speed_value = 1.0
+
+        def _sync_humanize(*_args):
+            self._humanize_value = bool(self.humanize_enabled.get())
+
+        _sync_speed()
+        _sync_humanize()
+        self.speed_var.trace_add("write", _sync_speed)
+        self.humanize_enabled.trace_add("write", _sync_humanize)
+
     def toggle_record(self):
         """Toggles recording state."""
         if self.playing:
@@ -531,23 +558,26 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
             if (not cfg.get("hide_password_warning")
                     and not self._confirm_password_warning()):
                 return  # Cancelled (or dialog already open): don't record.
+            self.start_cursor_pos = self.manager.get_cursor_pos()
+            # monotonic: event timestamps below are deltas from this base,
+            # so a clock jump mid-recording must not skew them.
+            self.start_time = time.monotonic()
+            # Arm last. device_loop captures whenever self.recording is
+            # True, so setting it before the base existed gave the first
+            # events a negative time (monotonic() - a later start_time)
+            # and let the recorder read a position we were still changing.
             self.recording = True
             with self.events_lock:
                 self._rel_dirty = False
                 self._rel_dx = 0
                 self._rel_dy = 0
+                self.events = []
             with self._processed_ids_lock:
                 self._processed_ids.clear()
                 # __dict__ lookup: see note in device_loop.
                 order = self.__dict__.get("_processed_ids_order")
                 if order is not None:
                     order.clear()
-            with self.events_lock:
-                self.events = []
-            self.start_cursor_pos = self.manager.get_cursor_pos()
-            # monotonic: event timestamps below are deltas from this base,
-            # so a clock jump mid-recording must not skew them.
-            self.start_time = time.monotonic()
             self.rec_tip = ToolTip(
                 self.btn_rec, RECORDING_TOOLTIP_TEXT)
             self.btn_rec.configure(text="■", fg_color="#b71c1c")
@@ -582,8 +612,20 @@ def main(argv=None):
     if argv and argv[0] in ("play", "-h", "--help"):
         from cli import main as cli_main
         return cli_main(argv)
-    app = LinuxTaskApp()
+    try:
+        app = LinuxTaskApp()
+    except RuntimeError as exc:
+        # Missing system deps or an unsupported desktop: a visible dialog
+        # and a clean exit code, not a traceback in a terminal nobody sees.
+        logger.error("Driver initialization failed: %s", exc)
+        try:
+            import tkinter.messagebox as mb
+            mb.showerror("LinuxTask - Initialization failed", str(exc))
+        except Exception:
+            logger.debug("Failed to show error dialog.", exc_info=True)
+        return 1
     app.mainloop()
+    return 0
 
 
 if __name__ == "__main__":

@@ -13,18 +13,16 @@ License: MIT
 
 import json
 import os
-import sys
 import tempfile
 import threading
 import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+from evdev import ecodes as e
+from evdev.events import InputEvent
 
-import main  # noqa: E402  (imports customtkinter/evdev, but no display touched)
-from evdev import ecodes as e  # noqa: E402
-from evdev.events import InputEvent  # noqa: E402
+import main
 
 
 def make_app():
@@ -269,27 +267,83 @@ class TestHotkeyMapping(unittest.TestCase):
 
 
 class TestHumanize(unittest.TestCase):
+    """Humanize helpers plus the end-to-end effect on the replay path."""
+
     def setUp(self):
         self.app = make_app()
 
-    def test_disabled_returns_values_unchanged(self):
-        self.app.humanize_enabled.get.return_value = False
-        dx, dy, delay = self.app._apply_humanize(10, 20, 0.5)
-        self.assertEqual((dx, dy, delay), (10, 20, 0.5))
+    def _set_humanize(self, value):
+        self.app._humanize_value = value
+        self.app.humanize_enabled.get.return_value = value
 
-    def test_enabled_jitter_bounded_and_delay_increased(self):
-        self.app.humanize_enabled.get.return_value = True
-        for _ in range(50):
-            dx, dy, delay = self.app._apply_humanize(10, 20, 0.5)
+    def test_disabled_leaves_values_unchanged(self):
+        self._set_humanize(False)
+        self.assertEqual(self.app._humanize_point(100, 200), (100, 200))
+        self.assertEqual(self.app._humanize_delta(10, -20), (10, -20))
+        self.assertEqual(self.app._humanize_gap_delay(0.5), 0.0)
+
+    def test_jitter_bounded_to_two_pixels(self):
+        self._set_humanize(True)
+        for _ in range(100):
+            x, y = self.app._humanize_point(100, 200)
+            self.assertTrue(98 <= x <= 102, f"x out of bounds: {x}")
+            self.assertTrue(198 <= y <= 202, f"y out of bounds: {y}")
+            dx, dy = self.app._humanize_delta(10, -20)
             self.assertTrue(8 <= dx <= 12, f"dx out of bounds: {dx}")
-            self.assertTrue(18 <= dy <= 22, f"dy out of bounds: {dy}")
-            self.assertTrue(0.5 <= delay <= 0.5 * 1.03 + 1e-9,
-                            f"delay out of bounds: {delay}")
+            self.assertTrue(-22 <= dy <= -18, f"dy out of bounds: {dy}")
 
     def test_jitter_is_not_always_zero(self):
-        self.app.humanize_enabled.get.return_value = True
-        xs = {self.app._apply_humanize(10, 10, 0)[0] for _ in range(100)}
+        self._set_humanize(True)
+        xs = {self.app._humanize_point(100, 200)[0] for _ in range(100)}
         self.assertGreater(len(xs), 1)
+
+    def test_gap_delay_within_three_percent(self):
+        self._set_humanize(True)
+        for _ in range(100):
+            extra = self.app._humanize_gap_delay(1.0)
+            self.assertTrue(0.0 <= extra <= 0.03, f"extra: {extra}")
+        # No gap (last event of the macro) must not invent a delay.
+        self.assertEqual(self.app._humanize_gap_delay(0.0), 0.0)
+        self.assertEqual(self.app._humanize_gap_delay(-1.0), 0.0)
+
+    def test_pos_events_are_jittered_too(self):
+        """The A3 regression: humanize used to touch only 'rel' events.
+
+        Absolute macros are what KDE/GNOME replay, so an untouched 'pos'
+        path meant the checkbox did nothing for most recordings.
+        """
+        self.app.start_cursor_pos = (100, 200)
+        self.app.events = [
+            {"type": "pos", "x": 300, "y": 400, "time": 0.0},
+        ]
+        self._set_humanize(True)
+        self.app.playing = True
+        with patch('playback.random.randint', return_value=1):
+            self.app.playback_thread()
+        self.app.manager.move_cursor.assert_any_call(301, 401)
+
+    def test_rel_events_keep_their_jitter(self):
+        self.app.start_cursor_pos = None
+        self.app.events = [
+            {"type": "rel", "dx": 5, "dy": 5, "time": 0.0},
+        ]
+        self.app.manager.move_relative.return_value = True
+        self._set_humanize(True)
+        self.app.playing = True
+        with patch('playback.random.randint', return_value=-1):
+            self.app.playback_thread()
+        self.app.manager.move_relative.assert_called_once_with(4, 4)
+
+    def test_speed_and_humanize_are_read_from_the_mirrors(self):
+        """A4: the worker must not call Tk variables (single-threaded Tcl)."""
+        self.app._speed_value = 4.0
+        self.app._humanize_value = True
+        self.app.speed_var.get.side_effect = RuntimeError(
+            "Tk accessed from a worker thread")
+        self.app.humanize_enabled.get.side_effect = RuntimeError(
+            "Tk accessed from a worker thread")
+        self.assertEqual(self.app._setting_speed(), 4.0)
+        self.assertTrue(self.app._setting_humanize())
 
 
 class TestPlaybackDispatch(unittest.TestCase):
@@ -465,7 +519,7 @@ class TestPlaybackDispatch(unittest.TestCase):
 
         self.app.start_playback()
         deadline = time.monotonic() + 5
-        while self.app.playing and time.monotonic() + deadline:
+        while self.app.playing and time.monotonic() < deadline:
             time.sleep(0.01)
         # No exception escaped the playback thread.
         self.assertFalse(self.app.playing)
@@ -480,7 +534,7 @@ class TestPlaybackDispatch(unittest.TestCase):
         started = time.monotonic()
         self.app.start_playback()
         deadline = time.monotonic() + 5
-        while self.app.playing and time.monotonic() + deadline:
+        while self.app.playing and time.monotonic() < deadline:
             time.sleep(0.01)
         elapsed = time.monotonic() - started
         # 2.0s / 4x = 0.5s scheduled; allow generous CI slack.
