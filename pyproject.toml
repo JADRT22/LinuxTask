@@ -32,10 +32,14 @@ classifiers = [
 
 # Same pins as requirements.txt; keep the two in step (requirements.txt is
 # what tools/install.sh and the AppImage build install, and it carries the
-# commentary about the distro-only modules).
+# commentary about the distro-only modules). evdev is split by interpreter
+# because 2.0.0 requires >=3.11 while this project's floor is 3.10; the
+# marker test in tests/test_ci_workflow.py fails if a matrix version ends up
+# with no installable evdev line here or in requirements.txt.
 dependencies = [
     "customtkinter==6.0.0",
-    "evdev==2.0.0",
+    "evdev==2.0.0; python_version >= '3.11'",
+    "evdev==1.9.3; python_version < '3.11'",
     "python-xlib==0.33",
 ]
 

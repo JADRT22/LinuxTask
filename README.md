@@ -226,7 +226,9 @@ graph TD
 - Python ≥ 3.10 with Tk
 - `evdev`, `customtkinter`, `python-xlib` (installed by the setup script into
   the project venv at the pinned versions; the distro `python3-evdev` is only
-  a fallback for the system Python)
+  a fallback for the system Python). evdev 2.x requires Python ≥ 3.11, so on
+  3.10 the setup script installs the pinned 1.9.x instead — the recorder
+  supports both APIs, and that is the version the distro packages ship.
 - **GNOME Wayland only**: a running `ydotoold` daemon; the
   [cursor-bridge extension](#gnome-wayland-absolute-mode) for absolute
   mode (`python3-dbus` optional — used in-process when present, `gdbus`

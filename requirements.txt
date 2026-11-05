@@ -1,8 +1,19 @@
 # Core pip dependencies, pinned: installed into .venv by tools/install.sh and
 # into the AppImage. The distro's python3-evdev is only a fallback for the
-# system Python (it may be 1.x); CI tests these pins (evdev 2.0.0).
+# system Python (it may be 1.x); CI tests these pins on every supported
+# interpreter.
 customtkinter==6.0.0
-evdev==2.0.0
+# evdev 2.0.0 declares Requires-Python >=3.11, so on the 3.10 floor that
+# README, docs/CONTRIBUTING.md and pyproject.toml promise, pip cannot even see
+# it: "No matching distribution found for evdev==2.0.0". One pin there broke
+# tools/install.sh on Python 3.10 systems (Ubuntu 22.04, Debian 11) and killed
+# the CI matrix job for 3.10 in "Install dependencies". The last 1.x release is
+# pinned for that interpreter instead, which is also exactly what the distro
+# packages ship. src/recorder.py handles both APIs already (it tries
+# list_devices(writable=False) and falls back on TypeError), and the app only
+# touches ecodes/InputDevice/list_devices/UInput, all stable across 1.x.
+evdev==2.0.0; python_version >= "3.11"
+evdev==1.9.3; python_version < "3.11"
 python-xlib==0.33
 
 # NOT pip-installable on most systems (need C headers + libs).

@@ -256,7 +256,13 @@ class TestSourceBuiltWheels(unittest.TestCase):
         with open(os.path.join(REPO, 'requirements.txt'),
                   encoding='utf-8') as fh:
             runtime = fh.read()
-        runtime_pin = re.search(r'^evdev==(\S+)$', runtime, re.M).group(1)
+        # requirements.txt splits the evdev pin by interpreter, because
+        # evdev 2.0.0 requires >=3.11 while the project floor is 3.10. The
+        # bundled interpreter is the locked one (3.12), so the line that
+        # applies to the AppImage is the >=3.11 one.
+        runtime_pin = re.search(
+            r'^evdev==([^;]+?);\s*python_version >= "3\.11"',
+            runtime, re.M).group(1).strip()
         bundled = re.search(
             r'\.\./wheels/evdev-([^/]+?)-cp\d+-cp\d+-',
             self._appimage_packages()).group(1)

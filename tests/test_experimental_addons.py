@@ -167,9 +167,28 @@ class TestAntiFalsePositiveFlow(unittest.TestCase):
         self.assertTrue(stable)
 
 
+def _imagetk_available():
+    """Can PIL's Tk glue be imported here?
+
+    The distro splits it in two packages: python3-pil gives an importable
+    PIL without PIL.ImageTk, which is what the CI distro-bindings runner had
+    until python3-pil.imagetk was added to the apt list. A missing optional
+    add-on dependency has to skip, the way numpy does at the top of this
+    file, and not surface as a suite error on someone else's machine.
+    """
+    try:
+        from PIL import ImageTk  # noqa: F401 -- presence check, not a use
+    except (ImportError, OSError):
+        return False
+    return True
+
+
 class TestGUIColorSpinLogic(unittest.TestCase):
     """The GUI app logic that is testable without a display."""
 
+    @unittest.skipUnless(_imagetk_available(),
+                         "color_spin/app.py needs PIL.ImageTk "
+                         "(apt install python3-pil.imagetk)")
     def test_config_roundtrip_and_behavior_merge(self):
         sys.path.insert(0, os.path.join(REPO_ROOT, "experimental",
                                         "color_spin"))

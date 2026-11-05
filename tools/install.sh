@@ -162,7 +162,10 @@ echo "Starting LinuxTask installation..."
 # The distro packages installed below are the fallback for the system
 # Python; the project venv (--system-site-packages, so dbus/gi still
 # resolve) installs the pinned requirements.txt, shadowing the distro's
-# older evdev with 2.0.0 — the version CI tests. Distro Pythons here are
+# evdev with the pinned one — 2.0.0 on Python >=3.11 and 1.9.3 on 3.10,
+# because 2.0 declares Requires-Python >=3.11: one unmarked pin there made
+# the install unresolvable on Ubuntu 22.04 and Debian 11. CI tests both,
+# each on its own interpreter. Distro Pythons here are
 # externally managed (PEP 668 blocks `pip install --user`), hence the
 # venv. Never --break-system-packages.
 echo "[INFO] Installing system packages (evdev, python-xlib, Tk)..."
