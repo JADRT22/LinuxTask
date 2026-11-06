@@ -24,6 +24,10 @@ automation tools.
 git clone https://github.com/JADRT22/LinuxTask.git && cd LinuxTask && ./tools/install.sh && ./tools/run.sh
 ```
 
+Or download
+[LinuxTask-x86_64.AppImage](https://github.com/JADRT22/LinuxTask/releases/latest/download/LinuxTask-x86_64.AppImage),
+`chmod +x` it and run — no clone, no venv (see [AppImage](#appimage)).
+
 Record with **F8**, replay with **F9** — global hotkeys work in any window.
 
 > 🇧🇷 **Em Português:** LinuxTask é um gravador de macros para Linux — grava e reproduz teclado e mouse no Hyprland, Sway, GNOME Wayland, KDE Wayland e X11, com captura via `evdev` e reprodução por `uinput`/APIs do compositor. Instalação: `./tools/install.sh`, uso: `./tools/run.sh` (atalhos globais F8/F9).
@@ -390,13 +394,14 @@ persistence by instantiating the app without a display or a mainloop,
 and every driver is tested against fakes of its IPC (subprocess output,
 D-Bus replies) rather than a live session.
 
-CI (`.github/workflows/python-app.yml`) runs three jobs:
+CI (`.github/workflows/python-app.yml`) runs four jobs:
 
 | Job | What it proves |
 |---|---|
 | `test` | pytest with coverage on 3.10/3.11/3.12/3.13/3.14, then `unittest discover`, so the documented no-pytest path cannot rot |
 | `distro-bindings` | the same suite inside a `--system-site-packages` venv with `python3-dbus`, `python3-gi`, `python3-numpy`, `python3-pil` from apt — the only job where `tests/test_kde_wayland.py` and `tests/test_experimental_addons.py` really run |
 | `lint` | `python -m ruff check .`, rules and exemptions in `pyproject.toml` |
+| `appimage` | `tools/appimage/build.sh` end to end on a clean `ubuntu-latest` runner — the one place where `build/appimage/` holds nothing left over from an earlier build — then checks the bundle exists at the path the release job attaches from, so packaging breakage lands on the commit that caused it instead of at release time |
 
 Suites that need distro bindings skip themselves when those modules are
 missing, which is why the `test` job stays green without them — on a
@@ -432,6 +437,12 @@ refs that would be written (including the drained `[Unreleased]` body)
 without touching any files.
 
 ### AppImage
+
+Prebuilt for x86_64:
+[LinuxTask-x86_64.AppImage](https://github.com/JADRT22/LinuxTask/releases/download/v3.5.2/LinuxTask-x86_64.AppImage)
+from the [latest release](https://github.com/JADRT22/LinuxTask/releases/latest) —
+`chmod +x` and run it; the udev rule and the GNOME bridge still need
+`tools/install.sh` or the manual fallback below.
 
 ```bash
 tools/appimage/build.sh

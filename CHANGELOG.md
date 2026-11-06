@@ -10,6 +10,13 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Documentation
+- **The README points at the download, and counts four CI jobs.** Nothing
+  in it told a reader that `LinuxTask-x86_64.AppImage` is on the release
+  page -- the one thing v3.5.0 and v3.5.1 were missing -- and the tests
+  section still said "three jobs" after the `appimage` job was added to
+  close that class of failure.
+
 ## [v3.5.2] - 2026-11-06
 
 This is the release that has the download. `v3.5.0` and `v3.5.1` were both
