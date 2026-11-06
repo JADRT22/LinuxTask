@@ -12,9 +12,48 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [v3.5.2] - 2026-11-06
 
+This is the release that has the download. `v3.5.0` and `v3.5.1` were both
+published with an empty asset list: the AppImage built here and then failed
+on GitHub's machine - once at v3.5.0, once at v3.5.1, once more on a push -
+over five separate causes: the path the workflow attached from, `meson` and
+`patchelf` missing from the build environment's `PATH`, a wheel built at the
+wrong version, `girepository-2.0` shipped under a different package name
+than the apt list used, and the two below. Nothing in the recorder changed
+since v3.5.1.
+
+Why a clean machine notices things this one does not: `build/appimage/wheels`
+still holds the output of an older bootstrap, and the build skips the step
+that already has an artifact. Deleting that directory is what the runner does
+by definition, so from now on CI does it on every push (below).
+
 ### Fixed
-- Give PyGObject the pycairo headers this build produces
-- Name every host dependency the wheels actually ask for
+- **The AppImage is attached to this release**, built by CI from a clean
+  checkout: `LinuxTask-x86_64.AppImage`.
+- **PyGObject now finds pycairo's C headers from this build, not from the
+  host.** PyGObject's build looks `cairo` up by importing it with the
+  interpreter it is compiling for; the loop that source-builds pycairo never
+  installed it into its own scratch environment, so on a runner the import
+  failed, the pkg-config fallback found nothing either, and cc stopped at
+  `fatal error: py3cairo.h`. Arch hosts hide that: their `python-cairo`
+  answers the fallback with headers of a pycairo that is not the one that
+  ships in the bundle. Each built wheel now goes back into the build
+  environment, and PyGObject is not attempted unless `import cairo` answers.
+- **The build names every host dependency its own sdists ask for.** The
+  preflight went from three hand-picked `pkg-config` names to the full
+  `dependency()` list of the pinned pycairo, dbus-python and PyGObject,
+  versions included (`girepository-2.0 >= 2.80`, `libffi >= 3.0`,
+  `cairo-gobject`...), and the Ubuntu packages that provide them live in one
+  script that both workflows call instead of a list copy per workflow. A
+  missing or too-old module now costs one `pkg-config` call and prints
+  `PyGObject -> girepository-2.0 (not installed)`; before, it surfaced
+  seconds or minutes later inside a meson stack trace that named a
+  subprocess instead of the package to install.
+- **The AppImage build is a CI job, not a tag-time surprise.** `Python CI`
+  gained an `appimage` job that installs the dependencies, runs the whole
+  documented build - including the smoke guard that imports every driver
+  with the bundled interpreter - and checks the artifact exists. It found
+  the pycairo defect on its first run, 39 seconds into a push, with nothing
+  published.
 
 ## [v3.5.1] - 2026-11-05
 
