@@ -10,6 +10,12 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+## [v3.5.2] - 2026-11-06
+
+### Fixed
+- Give PyGObject the pycairo headers this build produces
+- Name every host dependency the wheels actually ask for
+
 ## [v3.5.1] - 2026-11-05
 
 A patch for the download itself. `v3.5.0` produced an AppImage that ran here
@@ -686,7 +692,8 @@ happened to be configured.
 - **Movement-precision tests**: `test_jitter.py` added to cover movement
   precision with unit tests.
 
-[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.5.1...HEAD
+[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.5.2...HEAD
+[v3.5.2]: https://github.com/JADRT22/LinuxTask/compare/v3.5.1...v3.5.2
 [v3.5.1]: https://github.com/JADRT22/LinuxTask/compare/v3.5.0...v3.5.1
 [v3.5.0]: https://github.com/JADRT22/LinuxTask/compare/v3.4.1...v3.5.0
 [v3.4.1]: https://github.com/JADRT22/LinuxTask/compare/v3.4.0...v3.4.1
