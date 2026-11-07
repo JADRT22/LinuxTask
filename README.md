@@ -171,8 +171,10 @@ reads degrade to the fallback chain.
   GNOME Wayland **only** with the cursor-bridge extension, whose `GetLayout`
   call reports the monitor union. Anywhere the layout cannot be read —
   an older bridge on GNOME, a Plasma without `kscreen-doctor --json` — the
-  box degrades to the primary output, and a macro recorded on a second
-  monitor placed left/above the origin gets folded onto the primary screen.
+  box degrades to one output, and a macro recorded on a second monitor
+  placed left/above the origin gets folded onto it. On KDE the `-o`
+  listing is the last resort and carries no positions: the output it picks
+  is the first one kscreen prints, not necessarily the primary.
   The detected geometry is logged at start-up
   (`Resolution (…): 2560x1440, layout 4480x1620+0-180`).
 - Cursor position is read from the compositor itself (KWin's scripting

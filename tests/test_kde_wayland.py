@@ -561,6 +561,88 @@ class TestKdeLayoutDetection(unittest.TestCase):
         driver = self._driver([payload])
         self.assertEqual(driver.bounds, (0, 0, 1920, 1080))
 
+    def _plasma_output(self, name, width, height, x, y, priority, mode_id):
+        """One output in the shape Plasma 6.8.1 reports (issue #7).
+
+        Abridged from the reporter's `kscreen-doctor --json`: there is no
+        'mode'/'currentMode' key, the size sits on the output itself, the
+        active mode is named by 'currentModeId', and the primary output is
+        marked by 'priority': 1 rather than a 'primary' flag.
+        """
+        return {
+            "name": name, "id": priority, "connected": True, "enabled": True,
+            "currentModeId": mode_id, "priority": priority,
+            "pos": {"x": x, "y": y},
+            "size": {"width": width, "height": height},
+            "sizeMM": {"width": 597, "height": 336},
+            "rotation": 1, "scale": 1, "overscan": 0, "brightness": 1,
+            "clones": [], "replicationSource": 0, "followPreferredMode": False,
+            "preferredModes": [mode_id], "iccProfilePath": "", "icon": "",
+            "modes": [
+                {"id": mode_id, "name": f"{width}x{height}@60",
+                 "refreshRate": 60,
+                 "size": {"width": width, "height": height}},
+                {"id": "99", "name": "1280x1024@60", "refreshRate": 60,
+                 "size": {"width": 1280, "height": 1024}},
+            ],
+        }
+
+    def _plasma_payload(self, outputs, width, height):
+        return json.dumps({
+            "outputs": outputs,
+            "screen": {"id": 0, "currentSize": {"width": width,
+                                                "height": height},
+                       "maxSize": {"width": 64000, "height": 64000},
+                       "minSize": {"width": 0, "height": 0},
+                       "maxActiveOutputsCount": 2},
+            "tabletModeAvailable": False, "tabletModeEngaged": False,
+        }).encode()
+
+    def test_json_size_on_the_output_is_read(self):
+        """The reporter's layout: 2560x1440 primary + 1600x1200 to its right.
+
+        kscreen itself declares currentSize 4160x1440, so a reader that
+        understands this shape must reach x=4000 on the secondary panel.
+        """
+        payload = self._plasma_payload([
+            self._plasma_output("HDMI-A-2", 1600, 1200, 2560, 0, 2, "1"),
+            self._plasma_output("DP-3", 2560, 1440, 0, 0, 1, "8"),
+        ], 4160, 1440)
+        driver = self._driver([payload])
+        self.assertEqual((driver.screen_width, driver.screen_height),
+                         (2560, 1440))
+        self.assertEqual(driver.bounds, (0, 0, 4160, 1440))
+        self.assertEqual(driver._clamp(4000, 1300), (4000, 1300))
+
+    def test_json_priority_one_is_the_primary_not_the_first_listed(self):
+        """Priority decides, even when the primary is neither first nor at 0,0.
+
+        The secondary sits at the origin here, so a reader that falls back
+        to "the output at (0,0)" reports 1600x1200 as the resolution.
+        """
+        payload = self._plasma_payload([
+            self._plasma_output("HDMI-A-2", 1600, 1200, 0, 0, 2, "1"),
+            self._plasma_output("DP-3", 2560, 1440, 1600, 0, 1, "8"),
+        ], 4160, 1440)
+        driver = self._driver([payload])
+        self.assertEqual((driver.screen_width, driver.screen_height),
+                         (2560, 1440))
+        self.assertEqual(driver.bounds, (0, 0, 4160, 1440))
+
+    def test_json_size_shape_logs_the_layout_line(self):
+        """The line #7 asks the reporter to paste must name both boxes."""
+        payload = self._plasma_payload([
+            self._plasma_output("HDMI-A-2", 1600, 1200, 2560, 0, 2, "1"),
+            self._plasma_output("DP-3", 2560, 1440, 0, 0, 1, "8"),
+        ], 4160, 1440)
+        with self.assertLogs('drivers.kde_wayland', level='INFO') as logs:
+            self._driver([payload])
+        self.assertTrue(
+            any('Resolution (kscreen-json): 2560x1440, layout 4160x1440+0+0'
+                in line for line in logs.output),
+            logs.output,
+        )
+
     def test_text_listing_still_works_without_positions(self):
         """Older kscreen-doctor: no --json, only the '*'-marked mode."""
         driver = self._driver([

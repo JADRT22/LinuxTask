@@ -195,16 +195,21 @@ class KdeWaylandDriver(DesktopManager):
 
         The JSON shape has moved between Plasma releases (a bare list, a
         wrapper object, and each output's fields living under 'output'), so
-        only the fields we need are read, defensively. Rotation is ignored:
-        kscreen reports the mode size, and a rotated output would then have
-        its width and height swapped — a wrong-but-inside-the-box estimate
-        is better than refusing the whole layout.
+        only the fields we need are read, defensively. Plasma 6.8 puts the
+        size on the output itself, next to 'currentModeId'/'modes', and marks
+        the primary with 'priority': 1 instead of a 'primary' flag: reading
+        only 'mode' drops every output and hands detection to the '-o'
+        fallback, which sees the first listed panel, not the primary one.
+        Rotation is ignored: kscreen reports the mode size, and a rotated
+        output would then have its width and height swapped — a
+        wrong-but-inside-the-box estimate is better than refusing the whole
+        layout.
         """
         if not isinstance(entry, dict):
             return None
         data = entry.get('output') if isinstance(
             entry.get('output'), dict) else entry
-        mode = data.get('mode') or data.get('currentMode') or {}
+        mode = data.get('mode') or data.get('currentMode') or data
         if isinstance(mode, dict):
             size = mode.get('size') if isinstance(
                 mode.get('size'), dict) else mode
@@ -226,7 +231,7 @@ class KdeWaylandDriver(DesktopManager):
         return (
             x, y, width, height,
             bool(data.get('enabled', True)),
-            bool(data.get('primary'))
+            bool(data.get('primary')) or data.get('priority') == 1
         )
 
     def _apply_outputs(self, geometries, source):

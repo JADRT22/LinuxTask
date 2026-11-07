@@ -10,6 +10,21 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Fixed
+- **KDE Wayland reads the Plasma 6.8 layout again (issue #7).** That
+  `kscreen-doctor --json` puts each output's size on the output itself,
+  next to `currentModeId` and `modes`, and marks the primary with
+  `priority: 1` instead of a `primary` flag. The reader only looked inside
+  `mode`/`currentMode`, so it dropped every output, detection fell through
+  to the `kscreen-doctor -o` listing, and the clamp box became the first
+  panel kscreen prints -- on the reporter's desk the 1600x1200 secondary,
+  listed ahead of his 2560x1440 primary. Making the main monitor primary
+  in kscreen could not help: the listing order does not follow priority.
+  The size is now read from the output when no mode object is present, and
+  `priority: 1` counts as primary. On his own JSON that gives
+  `Resolution (kscreen-json): 2560x1440, layout 4160x1440+0+0`, the same
+  4160x1440 kscreen declares as `screen.currentSize`.
+
 ### Documentation
 - **The README points at the download, and counts four CI jobs.** Nothing
   in it told a reader that `LinuxTask-x86_64.AppImage` is on the release
