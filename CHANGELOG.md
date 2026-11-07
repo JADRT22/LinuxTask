@@ -11,6 +11,15 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 ## [Unreleased]
 
 ### Fixed
+- **`linuxtask --version` no longer opens a window.** `main()` only handed
+  off to the headless CLI when the first argument was `play`, `-h` or
+  `--help`, so an unknown flag — or a subcommand typed wrong, `paly
+  macro.json` — fell through to the GUI branch and launched the app.
+  Anything on the command line now goes to the CLI and argparse answers
+  with exit 2 and a usage line; a bare `linuxtask` still starts the GUI.
+  Neither launcher passes arguments (`Exec=AppRun` in the AppImage desktop
+  entry, `Exec="$ABS_RUN_PATH"` from the installer), so nothing that used
+  to work changes.
 - **KDE Wayland reads the Plasma 6.8 layout again (issue #7).** That
   `kscreen-doctor --json` puts each output's size on the output itself,
   next to `currentModeId` and `modes`, and marks the primary with

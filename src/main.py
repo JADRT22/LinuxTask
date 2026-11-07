@@ -604,12 +604,15 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
 def main(argv=None):
     """Entry point (also used by the AppImage console script).
 
-    No arguments starts the GUI. `play <macro.json>` (and -h/--help) hands
-    off to the headless CLI in cli.py, so a script can replay a recorded
-    macro without opening a window (issue #5).
+    No arguments starts the GUI. Anything else goes to the headless CLI in
+    cli.py, so `play <macro.json>` replays without opening a window
+    (issue #5), and an unknown flag or a misspelled subcommand is answered
+    by argparse with exit 2 instead of by a window appearing. Neither
+    launcher passes arguments: the desktop entries run `AppRun` and the
+    installed `tools/run.sh` bare.
     """
     argv = sys.argv[1:] if argv is None else argv
-    if argv and argv[0] in ("play", "-h", "--help"):
+    if argv:
         from cli import main as cli_main
         return cli_main(argv)
     try:

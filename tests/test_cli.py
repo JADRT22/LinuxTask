@@ -250,7 +250,13 @@ class TestRunPlay(MacroFileMixin):
 
 
 class TestMainDispatch(unittest.TestCase):
-    """main.py must route `play` to the CLI and everything else to the GUI."""
+    """main.py hands any arguments to the CLI; only a bare call opens the GUI.
+
+    Neither launcher passes arguments (`Exec=AppRun` in the AppImage desktop
+    entry, `Exec="$ABS_RUN_PATH"` from install.sh), so anything on the
+    command line is meant for the CLI -- including a typo, which argparse
+    should answer with exit 2 instead of a window appearing.
+    """
 
     def test_play_is_handed_to_the_cli(self):
         with patch.object(cli, "main", return_value=0) as cli_main:
@@ -261,6 +267,22 @@ class TestMainDispatch(unittest.TestCase):
         with patch.object(cli, "main", return_value=0) as cli_main:
             main.main(["--help"])
         cli_main.assert_called_once_with(["--help"])
+
+    def test_unknown_option_does_not_open_the_gui(self):
+        with patch.object(main, "LinuxTaskApp") as app_cls, \
+                patch("sys.stderr"):
+            with self.assertRaises(SystemExit) as ctx:
+                main.main(["--version"])
+        self.assertEqual(ctx.exception.code, 2)
+        app_cls.assert_not_called()
+
+    def test_misspelled_subcommand_does_not_open_the_gui(self):
+        with patch.object(main, "LinuxTaskApp") as app_cls, \
+                patch("sys.stderr"):
+            with self.assertRaises(SystemExit) as ctx:
+                main.main(["paly", "m.json"])
+        self.assertEqual(ctx.exception.code, 2)
+        app_cls.assert_not_called()
 
     def test_no_arguments_starts_the_gui(self):
         with patch.object(main, "LinuxTaskApp") as app_cls:
