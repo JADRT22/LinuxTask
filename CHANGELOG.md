@@ -10,6 +10,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+## [v3.5.3] - 2026-11-07
+
 ### Fixed
 - **`linuxtask --version` no longer opens a window.** `main()` only handed
   off to the headless CLI when the first argument was `play`, `-h` or
@@ -762,7 +764,8 @@ happened to be configured.
 - **Movement-precision tests**: `test_jitter.py` added to cover movement
   precision with unit tests.
 
-[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.5.2...HEAD
+[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.5.3...HEAD
+[v3.5.3]: https://github.com/JADRT22/LinuxTask/compare/v3.5.2...v3.5.3
 [v3.5.2]: https://github.com/JADRT22/LinuxTask/compare/v3.5.1...v3.5.2
 [v3.5.1]: https://github.com/JADRT22/LinuxTask/compare/v3.5.0...v3.5.1
 [v3.5.0]: https://github.com/JADRT22/LinuxTask/compare/v3.4.1...v3.5.0
