@@ -12,6 +12,12 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [v3.5.3] - 2026-11-07
 
+Two bugs, both reported from outside this machine. If you record on KDE
+Wayland with more than one monitor, this is the release to take: the
+`v3.5.2` AppImage does not have the fix, and on Plasma 6.8 it clamps the
+cursor to whichever panel kscreen happens to print first. Nothing changed
+in the recorder, the file format or the shortcuts.
+
 ### Fixed
 - **`linuxtask --version` no longer opens a window.** `main()` only handed
   off to the headless CLI when the first argument was `play`, `-h` or
@@ -34,7 +40,10 @@ same date as v2.4.0, and with no tag that date cannot be checked).
   The size is now read from the output when no mode object is present, and
   `priority: 1` counts as primary. On his own JSON that gives
   `Resolution (kscreen-json): 2560x1440, layout 4160x1440+0+0`, the same
-  4160x1440 kscreen declares as `screen.currentSize`.
+  4160x1440 kscreen declares as `screen.currentSize`. That check runs
+  against the JSON he attached, which is now a test; there is no Plasma
+  session on the machine that builds this, so the confirmation on his desk
+  is still his to give.
 
 ### Documentation
 - **The README points at the download, and counts four CI jobs.** Nothing
