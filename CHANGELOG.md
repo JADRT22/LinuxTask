@@ -10,6 +10,17 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Added
+
+- The AppImage now says when a newer release exists. Settings → Updates
+  shows the version you run, a `Check now` button and
+  `Download and install` with a progress bar, and the Settings button
+  turns blue when there is something to install. The check runs at most
+  once every 24 hours against `api.github.com`, sends no account or
+  personal data, and can be switched off with `Check automatically`. Only
+  the AppImage has it: a git checkout or a `tools/install.sh` install
+  never touches the network.
+
 ## [v3.5.3] - 2026-11-07
 
 Two bugs, both reported from outside this machine. If you record on KDE

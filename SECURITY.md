@@ -33,6 +33,17 @@ within a few days; the maintainer answers in their spare time.
   `eval`'d. A malicious macro can still replay arbitrary keystrokes, in
   the same way a `.xdotool` script can; treat macro JSON you did not
   record as you would any executable.
+- The AppImage update check is the app's only outbound connection. It is
+  a single HTTPS GET to
+  `https://api.github.com/repos/JADRT22/LinuxTask/releases/latest`, at
+  most once per 24 hours, with no account, token or personal data — only
+  a `LinuxTask/<version>` user agent. The download is verified against
+  the SHA-256 digest GitHub publishes for that asset before it is moved
+  over the running file. That digest is an integrity check against a
+  truncated or corrupted transfer, **not** a signature: there is no
+  pinned key, so a compromised GitHub release would be trusted. That is
+  the same trust boundary as downloading the bundle from the release page
+  and running `chmod +x` on it.
 - On KDE Wayland the driver talks to KWin over D-Bus and to the XDG
   RemoteDesktop portal; on GNOME it talks to a bundled Shell extension.
   Replies are checked against the expected bus name's sender, and the

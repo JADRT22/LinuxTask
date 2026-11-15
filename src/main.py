@@ -38,9 +38,11 @@ import time
 import tkinter
 from collections import deque
 
-# filedialog must stay bound in this module: tests patch('main.filedialog...').
-from tkinter import filedialog  # noqa: F401
+# filedialog must stay bound in this module: tests patch('main.filedialog...'),
+# and the read-only AppImage path calls it for "Save to…".
+from tkinter import filedialog
 
+import updater
 from drivers.factory import AutoDetectDriver
 from playback import Playback
 
@@ -192,6 +194,21 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         self.app_config = self._load_app_config()
         self.start_cursor_pos = None
         self.init_uinput()
+        # AppImage update state. Written by workers as plain attributes and
+        # consumed on the UI thread (see _handle_update_*); the feature is
+        # absent entirely when updater.appimage_path() is None.
+        self._update_info = None
+        self._update_status = ""
+        self._update_error = None
+        self._update_target = None
+        self._update_progress = (0, 0)
+        self._update_last_percent = -1
+        self._update_check_running = False
+        self._update_manual = False
+        self._update_available = False
+        self._update_downloading = False
+        self._update_installed = False
+        self.after(200, self._start_update_check)
 
         self.grid_columnconfigure(list(range(7)), weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -284,6 +301,14 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
                     self.handle_play_key()
                 elif action == "play_finished":
                     self.btn_play.configure(text="▶", fg_color="#388e3c")
+                elif action == "update_checked":
+                    self._handle_update_checked()
+                elif action == "update_progress":
+                    self._handle_update_progress()
+                elif action == "update_installed":
+                    self._handle_update_installed()
+                elif action == "update_failed":
+                    self._handle_update_failed()
                 elif action == "driver_warning":
                     if not self.__dict__.get("_driver_warning_shown"):
                         self.__dict__["_driver_warning_shown"] = True
@@ -361,6 +386,8 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
             return
         self.settings_win = ctk.CTkToplevel(self)
         self.settings_win.title("Settings")
+        # Grows to 300x400 when the Updates section is appended below; a
+        # non-AppImage install never gets that section, so it keeps 250.
         self.settings_win.geometry("300x250")
         self.settings_win.attributes("-topmost", True)
         # Same neutral background as the main window; the frame stays flat
@@ -391,6 +418,9 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
             self.settings_frame, text="Humanize",
             variable=self.humanize_enabled
         ).pack(pady=10)
+        if updater.appimage_path() is not None:
+            self.settings_win.geometry("300x400")
+            self._build_updates_section()
 
     def _close_settings(self):
         self.is_mapping = None
@@ -439,6 +469,285 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
                 json.dump(self.app_config, fh)
         except OSError as exc:
             logger.warning("Could not save app config: %s", exc)
+
+    # --- AppImage updates ---------------------------------------------
+    # Scope is the AppImage only: updater.appimage_path() is the gate, and
+    # when it answers None there is no badge, no Settings section and no
+    # network call. Tk is touched only from the UI thread -- workers store
+    # plain attributes and queue a token, exactly like _driver_warn_fn.
+
+    def _start_update_check(self, force=False):
+        """Starts the check worker, or returns False when it is not due.
+
+        `force` is the Settings `Check now` button: a manual action skips
+        both the 24 h throttle and the automatic switch, because a user
+        who asks deserves an answer.
+        """
+        if self.__dict__.get("_update_check_running"):
+            return False
+        if updater.appimage_path() is None:
+            return False
+        cfg = self.__dict__.get("app_config") or {}
+        if not force:
+            if cfg.get("update_check_enabled") is False:
+                return False
+            try:
+                last = float(cfg.get("update_last_check") or 0)
+            except (TypeError, ValueError):
+                last = 0.0
+            if time.time() - last < updater.CHECK_INTERVAL_SECONDS:
+                return False
+        self._update_check_running = True
+        self._update_manual = bool(force)
+        threading.Thread(
+            target=self._update_check_worker, args=(bool(force),),
+            daemon=True,
+        ).start()
+        return True
+
+    def _update_check_worker(self, manual=False):
+        """Worker thread: no Tk, one attribute write and one queue token."""
+        info = None
+        try:
+            info = updater.fetch_latest()
+        except Exception:  # a worker must never kill the app
+            logger.debug("Update check raised.", exc_info=True)
+        self._update_info = info
+        self._update_manual = manual
+        self._ui_queue.put("update_checked")
+
+    def _handle_update_checked(self):
+        """UI thread: persist the check time and show only what is news."""
+        self._update_check_running = False
+        info = self.__dict__.get("_update_info")
+        manual = bool(self.__dict__.get("_update_manual"))
+        cfg = self.__dict__.get("app_config")
+        if cfg is None:
+            cfg = self.app_config = {}
+        cfg["update_last_check"] = time.time()
+        self._save_app_config()
+        newer = bool(info is not None
+                     and updater.is_newer(info.version, APP_VERSION))
+        self._update_available = newer
+        if newer:
+            # The loop button's blue: a badge, never a dialog.
+            btn = self.__dict__.get("btn_settings")
+            if btn is not None:
+                try:
+                    btn.configure(fg_color="#1976d2")
+                except Exception:  # a dead widget is not fatal
+                    logger.debug("Could not recolour the settings button.",
+                                 exc_info=True)
+            self._set_update_tooltip("Update available: v%s" % info.version)
+            self._update_status = "v%s is available." % info.version
+        if manual:
+            if info is None:
+                self._update_status = (
+                    "Could not reach GitHub. Try again later.")
+            elif not newer:
+                self._update_status = (
+                    "Already up to date (v%s)." % APP_VERSION)
+        self._refresh_update_widgets()
+
+    def _set_update_tooltip(self, text):
+        """Replaces the Settings button tooltip text (ToolTip reads it live)."""
+        tip = self.__dict__.get("_update_tooltip")
+        if tip is not None:
+            tip.text = text
+            return
+        btn = self.__dict__.get("btn_settings")
+        if btn is None:
+            return
+        try:
+            self._update_tooltip = ToolTip(btn, text)
+        except Exception:  # tooltips are decoration
+            logger.debug("Could not set the update tooltip.", exc_info=True)
+
+    def _settings_widget(self, name):
+        """The Settings widget `name`, or None if that window is gone."""
+        widget = self.__dict__.get(name)
+        if widget is None:
+            return None
+        try:
+            if not widget.winfo_exists():
+                return None
+        except Exception:  # mocks and destroyed widgets
+            return None
+        return widget
+
+    def _update_download_label(self):
+        """The install button's label, which depends on where it can write."""
+        target = updater.appimage_path()
+        if target is None:
+            return "Save to\u2026"
+        if os.access(os.path.dirname(target) or ".", os.W_OK):
+            return "Download and install"
+        return "Save to\u2026"
+
+    def _refresh_update_widgets(self):
+        """Pushes the stored update state onto the Settings widgets."""
+        label = self._settings_widget("update_status_lbl")
+        if label is not None:
+            label.configure(text=self.__dict__.get("_update_status") or "")
+        button = self._settings_widget("btn_update_download")
+        if button is None:
+            return
+        if self.__dict__.get("_update_downloading"):
+            button.configure(state="disabled")
+        elif (self.__dict__.get("_update_available")
+              and not self.__dict__.get("_update_installed")):
+            button.configure(state="normal",
+                             text=self._update_download_label())
+        else:
+            button.configure(state="disabled")
+
+    def _start_update_download(self):
+        """Starts the download worker; one download at a time."""
+        if self.__dict__.get("_update_downloading"):
+            return False
+        info = self.__dict__.get("_update_info")
+        if info is None:
+            return False
+        target = updater.appimage_path()
+        if target is None:
+            return False
+        if not os.access(os.path.dirname(target) or ".", os.W_OK):
+            # Read-only install location: write the new bundle elsewhere
+            # and leave the running file alone.
+            try:
+                chosen = filedialog.asksaveasfilename(
+                    title="Save the new AppImage",
+                    initialfile=os.path.basename(target),
+                    defaultextension=".AppImage",
+                )
+            except Exception:  # no display, dead widget
+                logger.debug("Save dialog failed.", exc_info=True)
+                return False
+            if not chosen:
+                return False
+            target = chosen
+        self._update_downloading = True
+        self._update_installed = False
+        self._update_error = None
+        self._update_target = target
+        self._update_last_percent = -1
+        self._update_progress = (0, 0)
+        self._update_status = "Downloading\u2026"
+        self._refresh_update_widgets()
+        threading.Thread(
+            target=self._update_download_worker, args=(info, target),
+            daemon=True,
+        ).start()
+        return True
+
+    def _update_download_worker(self, info, target):
+        """Worker thread: streams the asset, then reports with a token."""
+        try:
+            updater.download(info, target, progress=self._note_update_progress)
+        except Exception as exc:  # UpdateError, or anything unforeseen
+            logger.debug("Update download failed: %s", exc)
+            self._update_error = str(exc) or "Download failed."
+            self._ui_queue.put("update_failed")
+            return
+        self._ui_queue.put("update_installed")
+
+    def _note_update_progress(self, done, total):
+        """Called by the download in the worker thread, once per percent."""
+        self._update_progress = (done, total or 1)
+        percent = int(done * 100 / (total or 1))
+        if percent != self.__dict__.get("_update_last_percent"):
+            self._update_last_percent = percent
+            self._ui_queue.put("update_progress")
+
+    def _handle_update_progress(self):
+        bar = self._settings_widget("update_progress_bar")
+        if bar is None:
+            return
+        done, total = self.__dict__.get("_update_progress", (0, 0))
+        try:
+            bar.set(min(1.0, done / (total or 1)))
+        except Exception:  # a dead widget is not fatal
+            logger.debug("Could not update the progress bar.", exc_info=True)
+
+    def _handle_update_installed(self):
+        self._update_downloading = False
+        self._update_installed = True
+        info = self.__dict__.get("_update_info")
+        version = info.version if info is not None else "the new version"
+        target = self.__dict__.get("_update_target")
+        running = updater.appimage_path()
+        if target and running and \
+                os.path.abspath(target) != os.path.abspath(running):
+            self._update_status = (
+                "Saved to %s. Run it when you are ready." % target)
+        else:
+            # No auto-relaunch: killing a session mid-macro is worse than
+            # one click on the icon.
+            self._update_status = (
+                "Restart LinuxTask to use v%s." % version)
+        bar = self._settings_widget("update_progress_bar")
+        if bar is not None:
+            try:
+                bar.set(1.0)
+            except Exception:  # a dead widget is not fatal
+                logger.debug("Could not finish the progress bar.",
+                             exc_info=True)
+        self._refresh_update_widgets()
+
+    def _handle_update_failed(self):
+        self._update_downloading = False
+        self._update_status = (
+            self.__dict__.get("_update_error") or "Download failed.")
+        self._refresh_update_widgets()
+
+    def _toggle_update_auto(self):
+        """Persists the `Check automatically` checkbox."""
+        cfg = self.__dict__.get("app_config")
+        if cfg is None:
+            cfg = self.app_config = {}
+        cfg["update_check_enabled"] = bool(self.update_auto_var.get())
+        self._save_app_config()
+
+    def _build_updates_section(self):
+        """The Updates block of the Settings window (AppImage only)."""
+        ctk.CTkLabel(
+            self.settings_frame, text="Updates",
+            font=("DejaVu Sans", 14, "bold")
+        ).pack(pady=(12, 4))
+        self.update_version_lbl = ctk.CTkLabel(
+            self.settings_frame,
+            text="Current version: v%s" % APP_VERSION,
+            font=("DejaVu Sans", 11),
+        )
+        self.update_version_lbl.pack()
+        self.update_status_lbl = ctk.CTkLabel(
+            self.settings_frame, text="", wraplength=260,
+            font=("DejaVu Sans", 11),
+        )
+        self.update_status_lbl.pack(pady=(2, 6))
+        self.update_progress_bar = ctk.CTkProgressBar(
+            self.settings_frame, width=220)
+        self.update_progress_bar.set(0)
+        self.update_progress_bar.pack(pady=(0, 6))
+        self.btn_update_check = ctk.CTkButton(
+            self.settings_frame, text="Check now",
+            command=lambda: self._start_update_check(force=True),
+        )
+        self.btn_update_check.pack(pady=2, fill="x", padx=20)
+        self.btn_update_download = ctk.CTkButton(
+            self.settings_frame, text="Download and install",
+            command=self._start_update_download,
+        )
+        self.btn_update_download.pack(pady=2, fill="x", padx=20)
+        cfg = self.__dict__.get("app_config") or {}
+        self.update_auto_var = ctk.BooleanVar(
+            value=cfg.get("update_check_enabled") is not False)
+        ctk.CTkCheckBox(
+            self.settings_frame, text="Check automatically",
+            variable=self.update_auto_var,
+            command=self._toggle_update_auto,
+        ).pack(pady=6)
+        self._refresh_update_widgets()
 
     def _confirm_password_warning(self):
         """First-recording warning. Returns True when recording may start.

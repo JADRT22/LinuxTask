@@ -23,6 +23,7 @@ from evdev import ecodes as e
 from evdev.events import InputEvent
 
 import main
+import updater
 
 
 def make_app():
@@ -814,6 +815,199 @@ class TestPasswordWarningGate(unittest.TestCase):
                 self.assertTrue(
                     fresh._load_app_config().get("hide_password_warning"))
                 self.assertTrue(os.path.isfile(path))
+
+
+def make_update_app():
+    """Bare app with the update attributes and mock Settings widgets."""
+    app = make_app()
+    app.btn_settings = MagicMock()
+    app._save_app_config = MagicMock()
+    app._update_info = None
+    app._update_status = ""
+    app._update_error = None
+    app._update_target = None
+    app._update_progress = (0, 0)
+    app._update_last_percent = -1
+    app._update_check_running = False
+    app._update_manual = False
+    app._update_available = False
+    app._update_downloading = False
+    app._update_installed = False
+    # No Settings window is open in these tests.
+    app.update_status_lbl = None
+    app.update_progress_bar = None
+    app.btn_update_download = None
+    return app
+
+
+def update_info(version="9.9.9"):
+    return updater.UpdateInfo(
+        version=version,
+        asset_url="https://example.invalid/LinuxTask.AppImage",
+        asset_size=10,
+        sha256="a" * 64,
+        html_url="https://example.invalid/release",
+    )
+
+
+class TestUpdateNotifications(unittest.TestCase):
+    """The UI half of the updater: queue tokens in, widgets out."""
+
+    def setUp(self):
+        self.app = make_update_app()
+
+    def test_newer_release_recolours_settings_and_writes_config(self):
+        self.app._update_info = update_info("9.9.9")
+        self.app._ui_queue.put("update_checked")
+
+        self.app._poll_hotkeys()
+
+        self.app.btn_settings.configure.assert_called_once_with(
+            fg_color="#1976d2")
+        self.assertTrue(self.app._update_available)
+        self.assertIn("9.9.9", self.app._update_status)
+        self.app._save_app_config.assert_called_once()
+        self.assertIn("update_last_check", self.app.app_config)
+        self.assertFalse(self.app._update_check_running)
+
+    def test_same_or_older_release_leaves_the_button_alone(self):
+        self.app._update_info = update_info("0.0.1")
+        self.app._ui_queue.put("update_checked")
+
+        self.app._poll_hotkeys()
+
+        self.app.btn_settings.configure.assert_not_called()
+        self.assertFalse(self.app._update_available)
+
+    def test_failed_automatic_check_is_silent(self):
+        self.app._update_info = None
+        self.app._ui_queue.put("update_checked")
+
+        self.app._poll_hotkeys()
+
+        self.assertEqual(self.app._update_status, "")
+        self.app.btn_settings.configure.assert_not_called()
+        # The throttle is still recorded, so an offline launch is not
+        # retried on every start.
+        self.assertIn("update_last_check", self.app.app_config)
+
+    def test_manual_check_reports_failure(self):
+        self.app._update_info = None
+        self.app._update_manual = True
+        self.app._ui_queue.put("update_checked")
+
+        self.app._poll_hotkeys()
+
+        self.assertIn("Could not reach GitHub", self.app._update_status)
+
+    def test_manual_check_reports_up_to_date(self):
+        self.app._update_info = update_info(main.APP_VERSION)
+        self.app._update_manual = True
+        self.app._ui_queue.put("update_checked")
+
+        self.app._poll_hotkeys()
+
+        self.assertIn("Already up to date", self.app._update_status)
+
+    def test_installed_token_asks_for_a_restart(self):
+        self.app._update_info = update_info("9.9.9")
+        self.app._update_available = True
+        self.app._ui_queue.put("update_installed")
+
+        self.app._poll_hotkeys()
+
+        self.assertIn("Restart LinuxTask", self.app._update_status)
+        self.assertIn("9.9.9", self.app._update_status)
+        self.assertTrue(self.app._update_installed)
+
+    def test_failed_token_surfaces_the_error(self):
+        self.app._update_downloading = True
+        self.app._update_error = "sha256 mismatch: got abc"
+        self.app._ui_queue.put("update_failed")
+
+        self.app._poll_hotkeys()
+
+        self.assertEqual(self.app._update_status, "sha256 mismatch: got abc")
+        self.assertFalse(self.app._update_downloading)
+
+    def test_progress_token_sets_the_bar(self):
+        bar = MagicMock()
+        self.app.update_progress_bar = bar
+        self.app._update_progress = (5, 10)
+        self.app._ui_queue.put("update_progress")
+
+        self.app._poll_hotkeys()
+
+        bar.set.assert_called_once_with(0.5)
+
+    def test_worker_touches_no_tk(self):
+        """Workers may only write attributes and queue a token."""
+        self.app.btn_settings.configure.side_effect = AssertionError(
+            "Tk touched from a worker thread")
+        info = update_info("9.9.9")
+        with patch("main.updater.fetch_latest", return_value=info):
+            self.app._update_check_worker(manual=False)
+
+        self.assertIs(self.app._update_info, info)
+        self.assertEqual(self.app._ui_queue.get_nowait(), "update_checked")
+        self.app.btn_settings.configure.assert_not_called()
+        self.app._save_app_config.assert_not_called()
+
+
+class TestUpdateCheckGates(unittest.TestCase):
+    """When the automatic check is allowed to start at all."""
+
+    def setUp(self):
+        self.app = make_update_app()
+
+    def _start(self, force=False, appimage="/tmp/LinuxTask.AppImage"):
+        with patch("main.updater.appimage_path", return_value=appimage), \
+                patch("main.threading.Thread") as thread:
+            started = self.app._start_update_check(force=force)
+        return started, thread
+
+    def test_no_appimage_means_no_thread_and_no_network(self):
+        started, thread = self._start(appimage=None)
+        self.assertFalse(started)
+        thread.assert_not_called()
+        self.assertFalse(self.app._update_check_running)
+
+    def test_disabled_switch_stops_the_automatic_check(self):
+        self.app.app_config["update_check_enabled"] = False
+        started, thread = self._start()
+        self.assertFalse(started)
+        thread.assert_not_called()
+
+    def test_within_twenty_four_hours_starts_nothing(self):
+        self.app.app_config["update_last_check"] = time.time() - 60
+        started, thread = self._start()
+        self.assertFalse(started)
+        thread.assert_not_called()
+
+    def test_stale_check_starts_one_thread(self):
+        self.app.app_config["update_last_check"] = time.time() - 25 * 3600
+        started, thread = self._start()
+        self.assertTrue(started)
+        thread.assert_called_once()
+        self.assertTrue(self.app._update_check_running)
+
+    def test_first_launch_starts_a_check(self):
+        started, thread = self._start()
+        self.assertTrue(started)
+        thread.assert_called_once()
+
+    def test_manual_check_ignores_throttle_and_switch(self):
+        self.app.app_config["update_check_enabled"] = False
+        self.app.app_config["update_last_check"] = time.time()
+        started, thread = self._start(force=True)
+        self.assertTrue(started)
+        thread.assert_called_once()
+
+    def test_a_second_check_is_a_no_op(self):
+        self.app._update_check_running = True
+        started, thread = self._start(force=True)
+        self.assertFalse(started)
+        thread.assert_not_called()
 
 
 if __name__ == '__main__':

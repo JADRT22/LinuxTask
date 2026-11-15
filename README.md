@@ -46,6 +46,7 @@ Record with **F8**, replay with **F9** — global hotkeys work in any window.
 - [Security model](#security-model)
 - [Development](#development)
   - [Tests](#tests) · [Release process](#release-process) · [AppImage](#appimage)
+- [Updates](#updates)
 - [Troubleshooting](#troubleshooting)
 - [FAQ](#faq)
 - [Uninstall](#uninstall)
@@ -469,6 +470,36 @@ fontconfig/Xft, so it only knows bitmap fonts — the AppImage toolbar shows
 ASCII text labels (REC/PLAY/LOOP/SET/STOP) instead of the glyph icons, by
 design. A source install via `tools/run.sh` uses the system fonts and the
 original glyph labels; the GUI is otherwise identical.
+
+## Updates
+
+The AppImage checks for a newer release at start-up, at most once every
+24 hours, and tells you inside the app instead of leaving you on an old
+bundle:
+
+- the **Settings** button turns blue when a newer release exists, and its
+tooltip names the version;
+- **Settings → Updates** shows the version you are running, a `Check now`
+button (which ignores the 24 h wait), `Download and install` with a
+progress bar, and a `Check automatically` checkbox.
+
+The only host contacted is
+`https://api.github.com/repos/JADRT22/LinuxTask/releases/latest`. No
+account, token or personal data is sent — the request carries a
+`LinuxTask/<version>` user agent and nothing else. A failed check is
+silent (debug log only), and nothing is downloaded or installed unless
+you press the button.
+
+A download is verified against the SHA-256 digest the GitHub API reports
+for the asset, then moved over the AppImage with `os.replace`; the app
+keeps running on the old file and asks you to restart. If the directory
+holding the AppImage is not writable, the button reads `Save to…` and
+writes the new bundle wherever you choose instead.
+
+Turn the check off with `Check automatically` in Settings, or with
+`"update_check_enabled": false` in `~/.config/linuxtask/config.json`. A
+git checkout or a `tools/install.sh` install has no update check at all:
+no badge, no Settings section, no network call.
 
 ## Troubleshooting
 
