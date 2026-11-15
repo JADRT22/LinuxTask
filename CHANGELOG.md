@@ -10,6 +10,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+## [v3.6.0] - 2026-11-15
+
 ### Added
 
 - The AppImage now says when a newer release exists. Settings → Updates
@@ -784,7 +786,8 @@ happened to be configured.
 - **Movement-precision tests**: `test_jitter.py` added to cover movement
   precision with unit tests.
 
-[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.5.3...HEAD
+[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.6.0...HEAD
+[v3.6.0]: https://github.com/JADRT22/LinuxTask/compare/v3.5.3...v3.6.0
 [v3.5.3]: https://github.com/JADRT22/LinuxTask/compare/v3.5.2...v3.5.3
 [v3.5.2]: https://github.com/JADRT22/LinuxTask/compare/v3.5.1...v3.5.2
 [v3.5.1]: https://github.com/JADRT22/LinuxTask/compare/v3.5.0...v3.5.1
