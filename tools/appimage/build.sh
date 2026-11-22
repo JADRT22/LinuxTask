@@ -91,6 +91,11 @@ cp "$REPO_ROOT/src/cli.py" "$PROJ/cli.py"
 # updater.py is imported by main.py at start-up (the AppImage update
 # check), so a bundle without it dies before the toolbar is drawn.
 cp "$REPO_ROOT/src/updater.py" "$PROJ/updater.py"
+# ui_theme.py and ui_widgets.py hold the palette and the canvas widgets the
+# toolbar and the settings window are drawn from; recorder.py imports the
+# first one at module level, so a bundle without them does not even start.
+cp "$REPO_ROOT/src/ui_theme.py" "$PROJ/ui_theme.py"
+cp "$REPO_ROOT/src/ui_widgets.py" "$PROJ/ui_widgets.py"
 cp "$REPO_ROOT/assets/icon.png" "$PROJ/"
 cp "$REPO_ROOT/tools/appimage/pyproject.toml" "$PROJ/"
 cp "$REPO_ROOT/tools/appimage/LinuxTask.desktop" "$PROJ/"
@@ -387,6 +392,7 @@ if ! "$SMOKE_DIR/squashfs-root/python/bin/python3.12" -c "
 import dbus, evdev, customtkinter, Xlib
 from gi.repository import GLib
 import recorder, playback
+import ui_theme, ui_widgets
 import drivers.factory, drivers.sway, drivers.x11, drivers.gnome, drivers.hyprland
 import drivers.kde_wayland
 import cli

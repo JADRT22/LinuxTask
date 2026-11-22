@@ -10,6 +10,16 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Fixed
+- **v3.7.0 shipped without an AppImage.** `tools/appimage/build.sh` copies the
+  modules the bundle needs into the staging project one by one, and
+  `ui_theme.py`/`ui_widgets.py` were not on that list. The bundle assembled
+  fine and then died in the smoke guard with `ModuleNotFoundError: No module
+  named 'ui_theme'`, because `recorder.py` imports the palette at module
+  level. Both files are staged now and the guard imports them by name, so a
+  missing one fails the build instead of the release. v3.7.0's release page
+  has no binary to download; this one does.
+
 ## [v3.7.0] - 2026-11-22
 
 ### Changed
