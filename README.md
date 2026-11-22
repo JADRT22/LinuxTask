@@ -443,7 +443,7 @@ without touching any files.
 ### AppImage
 
 Prebuilt for x86_64:
-[LinuxTask-x86_64.AppImage](https://github.com/JADRT22/LinuxTask/releases/download/v3.5.2/LinuxTask-x86_64.AppImage)
+[LinuxTask-x86_64.AppImage](https://github.com/JADRT22/LinuxTask/releases/latest/download/LinuxTask-x86_64.AppImage)
 from the [latest release](https://github.com/JADRT22/LinuxTask/releases/latest) —
 `chmod +x` and run it; the udev rule and the GNOME bridge still need
 `tools/install.sh` or the manual fallback below.
@@ -478,8 +478,8 @@ The AppImage checks for a newer release at start-up, at most once every
 24 hours, and tells you inside the app instead of leaving you on an old
 bundle:
 
-- the **Settings** button turns blue when a newer release exists, and its
-tooltip names the version;
+- the **Settings** button is drawn in the desktop accent colour when a newer
+  release exists, and its tooltip names the version;
 - **Settings → Updates** shows the version you are running, a `Check now`
 button (which ignores the 24 h wait), `Download and install` with a
 progress bar, and a `Check automatically` checkbox.
