@@ -52,7 +52,7 @@ from playback import Playback
 from recorder import VIRTUAL_DEVICE_NAME, Recorder
 from ui_widgets import AdwButton, AdwMenu, AdwProgress, AdwRow, AdwSwitch
 
-APP_VERSION = "3.7.0"
+APP_VERSION = "3.7.1"
 
 CONFIG_DIR_NAME = "linuxtask"
 CONFIG_FILE_NAME = "config.json"

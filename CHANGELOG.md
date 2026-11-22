@@ -10,6 +10,8 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+## [v3.7.1] - 2026-11-22
+
 ### Fixed
 - **v3.7.0 shipped without an AppImage.** `tools/appimage/build.sh` copies the
   modules the bundle needs into the staging project one by one, and
@@ -822,7 +824,8 @@ happened to be configured.
 - **Movement-precision tests**: `test_jitter.py` added to cover movement
   precision with unit tests.
 
-[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.7.0...HEAD
+[Unreleased]: https://github.com/JADRT22/LinuxTask/compare/v3.7.1...HEAD
+[v3.7.1]: https://github.com/JADRT22/LinuxTask/compare/v3.7.0...v3.7.1
 [v3.7.0]: https://github.com/JADRT22/LinuxTask/compare/v3.6.0...v3.7.0
 [v3.6.0]: https://github.com/JADRT22/LinuxTask/compare/v3.5.3...v3.6.0
 [v3.5.3]: https://github.com/JADRT22/LinuxTask/compare/v3.5.2...v3.5.3
