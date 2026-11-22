@@ -10,6 +10,27 @@ same date as v2.4.0, and with no tag that date cannot be checked).
 
 ## [Unreleased]
 
+### Changed
+
+- **New look, same toolbar.** The 400×44 px bar is drawn on a Tk canvas now
+  instead of being a row of CustomTkinter buttons. It uses the GNOME Adwaita
+  colour roles and reads the accent colour from
+  `gsettings get org.gnome.desktop.interface accent-color`, so it sits next
+  to a GNOME app instead of beside it. The seven controls keep their order,
+  their commands and their tooltips. Text contrast is at least 4.5:1 and
+  glyph contrast at least 3:1 (WCAG 1.4.11) on every surface, and the icons
+  are drawn as vectors at runtime — no image files, no new dependency. The
+  bar also got a 2× path it never had: it was 400×44 fixed before, so it is
+  crisp on HiDPI now. It opens a little slower for that — 472 ms against
+  457 ms, median of five runs each — because the canvas is drawn once before
+  the window maps.
+- **Settings was repainted to match.** The two hotkey buttons became rows
+  with the key on the right, the checkboxes became switches, and the window
+  sizes itself to its content instead of a fixed 232 px — which also fixes
+  the last row it used to clip at 2×. On a small screen at 2× the Updates
+  section is still taller than the display allows; the window is clamped to
+  the screen and the bottom of that section is out of reach.
+
 ## [v3.6.0] - 2026-11-15
 
 ### Added

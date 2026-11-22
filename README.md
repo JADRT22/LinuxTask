@@ -16,7 +16,7 @@ device or the native APIs of your compositor, which sidesteps the input
 injection restrictions that Wayland compositors impose on traditional X11
 automation tools.
 
-![LinuxTask recording a terminal command and replaying it — KDE Wayland](assets/demo.gif)
+![The LinuxTask toolbar and its Settings window](assets/screenshot.png)
 
 ## Copy-paste in 30s
 
@@ -72,8 +72,9 @@ Record with **F8**, replay with **F9** — global hotkeys work in any window.
   starting cursor position.
 - **Global hotkeys** — record and play from any window (F8/F9 by default,
   fully remappable).
-- **Compact UI** — a 400×44 px toolbar built with CustomTkinter that stays out
-  of the way.
+- **Compact UI** — a 400×44 px toolbar drawn on a Tk canvas, in the GNOME
+  Adwaita colour roles and taking its accent colour from the desktop, so it
+  stays out of the way without looking like it belongs to another toolkit.
 
 ## Status
 

@@ -764,8 +764,10 @@ class TestHotkeyQueuePolling(unittest.TestCase):
         self.app._poll_hotkeys()
         self.app.toggle_record.assert_called_once()
         self.app.handle_play_key.assert_called_once()
+        # The idle play fill is the Adwaita success token; asserting the
+        # constant instead of its hex keeps the test about the behaviour.
         self.app.btn_play.configure.assert_called_once_with(
-            text="\u25b6", fg_color="#388e3c")
+            text="\u25b6", fg_color=main.PLAYING_IDLE_FILL)
 
     def test_poll_handles_empty_queue(self):
         # Must not raise even though the queue is empty.
@@ -863,7 +865,7 @@ class TestUpdateNotifications(unittest.TestCase):
         self.app._poll_hotkeys()
 
         self.app.btn_settings.configure.assert_called_once_with(
-            fg_color="#1976d2")
+            fg_color=main.LOOP_FILL)
         self.assertTrue(self.app._update_available)
         self.assertIn("9.9.9", self.app._update_status)
         self.app._save_app_config.assert_called_once()

@@ -20,6 +20,8 @@ from tkinter import filedialog
 
 from evdev import ecodes as e
 
+import ui_theme
+
 logger = logging.getLogger("LinuxTask")
 
 
@@ -61,7 +63,10 @@ class Playback:
                 logger.warning("Play pressed with no events recorded.")
                 return
         self.playing = True
-        self.btn_play.configure(text="■", fg_color="#b71c1c")
+        # Stop is the destructive action: same red_4 token the button
+        # starts from, so the toolbar never carries a second red.
+        self.btn_play.configure(
+            text="■", fg_color=ui_theme.default_palette().destructive)
         threading.Thread(target=self.playback_thread, daemon=True).start()
 
     def _setting_speed(self):

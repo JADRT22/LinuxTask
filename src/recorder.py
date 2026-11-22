@@ -16,7 +16,13 @@ import time
 import evdev
 from evdev import ecodes as e
 
+import ui_theme
+
 logger = logging.getLogger("LinuxTask")
+
+# Highlight used while a hotkey row waits for a key press. Same accent the
+# toolbar uses, so mapping mode does not introduce a third blue.
+_MAPPING_BG = ui_theme.default_palette().accent
 
 # Cap for the device_loop dedupe set: bounds memory in long sessions.
 # When exceeded, only the oldest entries are evicted (see device_loop)
@@ -196,9 +202,9 @@ class Recorder:
 
                         try:
                             if self.is_mapping == "rec":
-                                self.lbl_rec.configure(text=f"Record: {self.get_key_name(self.hotkey_rec)}", fg_color=['#3B8ED0', '#1F6AA5'])
+                                self.lbl_rec.configure(text=f"Record: {self.get_key_name(self.hotkey_rec)}", fg_color=_MAPPING_BG)
                             else:
-                                self.lbl_play.configure(text=f"Play/Stop: {self.get_key_name(self.hotkey_play)}", fg_color=['#3B8ED0', '#1F6AA5'])
+                                self.lbl_play.configure(text=f"Play/Stop: {self.get_key_name(self.hotkey_play)}", fg_color=_MAPPING_BG)
                         except Exception as exc:
                             logger.debug("Failed to update button text during mapping: %s", exc)
 

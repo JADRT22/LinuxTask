@@ -42,6 +42,7 @@ from collections import deque
 # and the read-only AppImage path calls it for "Save to…".
 from tkinter import filedialog
 
+import ui_theme
 import updater
 from drivers.factory import AutoDetectDriver
 from playback import Playback
@@ -49,6 +50,7 @@ from playback import Playback
 # Capture/playback live in their own modules and are mixed in below, so the
 # public surface (LinuxTaskApp.<method>) is unchanged for callers and tests.
 from recorder import VIRTUAL_DEVICE_NAME, Recorder
+from ui_widgets import AdwButton, AdwMenu, AdwProgress, AdwRow, AdwSwitch
 
 APP_VERSION = "3.6.0"
 
@@ -68,15 +70,46 @@ RECORDING_TOOLTIP_TEXT = (
     "RECORDING - every key, including passwords, is being captured."
 )
 
-# Adwaita-inspired neutral chrome for the dark UI (the app is always dark
-# mode). Semantic state colors (record red / play green / loop blue /
-# mapping orange) stay untouched: these literals only restyle the neutral
-# surfaces so the toolbar reads like a GNOME headerbar.
-UI_WINDOW_BG = "#303030"        # Adwaita dark window background
-UI_NEUTRAL = "#3a3a3a"          # neutral button fill
-UI_NEUTRAL_HOVER = "#4a4a4a"    # hover overlay (~+6% white, like Adwaita)
-UI_NEUTRAL_BORDER = "#4f4f4f"   # discreet 1px outline
-UI_DROPDOWN_BG = "#363636"      # option-menu popup background
+# Chrome for the dark UI, which is the only mode the app has. Every value
+# comes from ui_theme, which carries the libadwaita token it was extracted
+# from -- nothing down here invents a colour. The names survive because
+# recorder.py, playback.py and the tests refer to them.
+UI = ui_theme.default_palette()
+UI_WINDOW_BG = UI.window_bg
+UI_NEUTRAL = None               # Adwaita flat buttons: no fill until hover
+UI_NEUTRAL_HOVER = UI.hover
+UI_NEUTRAL_BORDER = UI.border
+UI_DROPDOWN_BG = UI.popover_bg
+RECORDING_FILL = UI.destructive   # red_4: the record button, armed or not
+PLAYING_IDLE_FILL = UI.success    # green_5: ready to replay
+PLAYING_FILL = UI.destructive      # stop is the destructive action
+LOOP_FILL = UI.accent              # the desktop accent while looping
+MAPPING_FILL = UI.warning          # waiting for a key press
+
+# Logical size of the toolbar. The window is that multiplied by the display
+# scale, and every widget metric goes through the same factor, so the row
+# holds together on a HiDPI screen instead of keeping 400x44 physical pixels.
+UI_WIDTH = 400
+UI_HEIGHT = 44
+UI_SCALE = 1.0
+
+
+def px(value):
+    """A logical pixel value in physical pixels, for the current scale."""
+    return int(round(value * UI_SCALE))
+
+
+def set_ui_scale(scale):
+    """Sets the logical-to-physical factor the toolbar is built with.
+
+    Must be called before the window is constructed: every widget metric,
+    padding and the window geometry read UI_SCALE at build time. The
+    capture harness uses it to render the same toolbar at 1x and 2x, which
+    is how the HiDPI render is produced without a second code path.
+    """
+    global UI_SCALE
+    UI_SCALE = float(scale)
+    return UI_SCALE
 
 
 class ToolTip:
@@ -104,8 +137,8 @@ class ToolTip:
             tip.wm_overrideredirect(True)
             tip.wm_geometry(f"+{x}+{y}")
             label = tkinter.Label(
-                tip, text=self.text, background="#222222",
-                foreground="white", relief="solid", borderwidth=1,
+                tip, text=self.text, background=UI.popover_bg,
+                foreground=UI.window_fg, relief="solid", borderwidth=1,
                 font=("DejaVu Sans", 9), padx=6, pady=2,
             )
             label.pack()
@@ -144,12 +177,15 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
             self.manager.__class__.__name__.replace("Driver", ""),
             self.manager.__class__.__name__.replace("Driver", ""))
         self.title(f"LinuxTask v{APP_VERSION} - {env_name} Edition")
-        # Compact toolbar (TinyTask-inspired): 400x44 instead of 420x50.
-        self.geometry("400x44")
+        # Compact toolbar: 400x44 logical pixels, scaled by the display's
+        # factor so a HiDPI screen gets 800x88 of real pixels instead of a
+        # 400x44 window with oversized fonts inside it.
+        self.geometry("%dx%d" % (UI_WIDTH * UI_SCALE,
+                                 UI_HEIGHT * UI_SCALE))
         self.attributes("-topmost", True)
         self.resizable(False, False)
-        # Explicit neutral background (Adwaita dark) instead of CTk's
-        # default gray14, so buttons and hover overlays sit on one base.
+        # One flat base for every surface, taken from the Adwaita dark
+        # window token rather than CTk's default gray14.
         self.configure(fg_color=UI_WINDOW_BG)
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
@@ -229,18 +265,20 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         buttons_cfg = [
             ("Open", "Open macro", UI_NEUTRAL, UI_NEUTRAL_HOVER, self.open_file),
             ("Save", "Save macro", UI_NEUTRAL, UI_NEUTRAL_HOVER, self.save_file),
-            ("●", "Record (F8)", "#d32f2f", "#b71c1c", self.toggle_record),
-            ("▶", "Play / Stop (F9)", "#388e3c", "#1b5e20", self.handle_play_key),
+            ("●", "Record (F8)", RECORDING_FILL, None, self.toggle_record),
+            ("▶", "Play / Stop (F9)", PLAYING_IDLE_FILL, None, self.handle_play_key),
             ("↻", "Loop playback", UI_NEUTRAL, UI_NEUTRAL_HOVER, self.toggle_loop)
         ]
 
         self.btns = []
         for i, (txt, tip, fg, hov, cmd) in enumerate(buttons_cfg):
-            btn = ctk.CTkButton(
+            btn = AdwButton(
                 self, text=txt, fg_color=fg, hover_color=hov,
-                command=cmd, **btn_opts
+                command=cmd, scale=UI_SCALE, palette=UI,
+                raised=(i < 2), **btn_opts
             )
-            btn.grid(row=0, column=i, padx=2, pady=2)
+            btn.grid(row=0, column=i, padx=int(2 * UI_SCALE),
+                     pady=int(2 * UI_SCALE))
             ToolTip(btn, tip)
             self.btns.append(btn)
 
@@ -255,27 +293,26 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         self.btns[1].configure(font=("DejaVu Sans", 10), width=40)
 
         self.speed_var = ctk.StringVar(value="1x")
-        # Neutral Adwaita-style drop-down: flat gray fill (was the CTk blue
-        # theme), matching hover state and a slightly lighter popup.
-        # Height 28 keeps the row rhythm closer to the 32px buttons.
-        self.speed_menu = ctk.CTkOptionMenu(
+        # Adwaita dropdown: a raised chevron button that opens a popover of
+        # the five speeds. Same StringVar and the same trace as before, so
+        # playback keeps reading the value it always read.
+        self.speed_menu = AdwMenu(
             self, values=["0.5x", "1x", "2x", "4x", "10x"],
             variable=self.speed_var, width=56, height=28,
-            font=("DejaVu Sans", 10),
-            fg_color=UI_NEUTRAL, button_color=UI_NEUTRAL,
-            button_hover_color=UI_NEUTRAL_HOVER,
-            dropdown_fg_color=UI_DROPDOWN_BG,
-            dropdown_hover_color=UI_NEUTRAL_HOVER,
+            scale=UI_SCALE, palette=UI,
         )
-        self.speed_menu.grid(row=0, column=5, padx=2, pady=2)
+        self.speed_menu.grid(row=0, column=5, padx=int(2 * UI_SCALE),
+                            pady=int(2 * UI_SCALE))
         self._bind_playback_settings()
 
-        self.btn_settings = ctk.CTkButton(
-            self, text="⚙", fg_color="transparent",
-            hover_color=UI_NEUTRAL_HOVER,
-            width=26, font=("DejaVu Sans", 14), command=self.open_settings
+        self.btn_settings = AdwButton(
+            self, text="⚙", fg_color=None,
+            hover_color=UI_NEUTRAL_HOVER, raised=False,
+            width=26, height=28, font=("DejaVu Sans", 14),
+            scale=UI_SCALE, palette=UI, command=self.open_settings
         )
-        self.btn_settings.grid(row=0, column=6, padx=2, pady=2)
+        self.btn_settings.grid(row=0, column=6, padx=int(2 * UI_SCALE),
+                              pady=int(2 * UI_SCALE))
         ToolTip(self.btn_settings, "Settings")
         ToolTip(self.speed_menu, "Playback speed")
 
@@ -300,7 +337,7 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
                 elif action == "play":
                     self.handle_play_key()
                 elif action == "play_finished":
-                    self.btn_play.configure(text="▶", fg_color="#388e3c")
+                    self.btn_play.configure(text="▶", fg_color=PLAYING_IDLE_FILL)
                 elif action == "update_checked":
                     self._handle_update_checked()
                 elif action == "update_progress":
@@ -386,41 +423,95 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
             return
         self.settings_win = ctk.CTkToplevel(self)
         self.settings_win.title("Settings")
-        # Grows to 300x400 when the Updates section is appended below; a
-        # non-AppImage install never gets that section, so it keeps 250.
-        self.settings_win.geometry("300x250")
+        # Width fixed, height left to the window manager: the window then grows
+        # to whatever the rows ask for, at any scale. Sizing it by hand meant
+        # measuring the packed content before the canvas rows had drawn, which
+        # clipped the last row at 2x (232 was right at 1x and too short there).
+        self.settings_win.minsize(px(300), px(120))
         self.settings_win.attributes("-topmost", True)
-        # Same neutral background as the main window; the frame stays flat
-        # (no dark card), like modern GNOME preference pages.
+        # Flat window colour, no card: the same surface the toolbar sits on,
+        # like a libadwaita preferences page.
         self.settings_win.configure(fg_color=UI_WINDOW_BG)
         self.settings_win.protocol("WM_DELETE_WINDOW", self._close_settings)
-        self.settings_frame = ctk.CTkFrame(
-            self.settings_win, fg_color=UI_WINDOW_BG
+        self.settings_frame = tkinter.Frame(
+            self.settings_win, bg=UI_WINDOW_BG
         )
         self.settings_frame.pack(fill="both", expand=True)
-        ctk.CTkLabel(
-            self.settings_frame, text="Global Hotkeys",
-            font=("DejaVu Sans", 14, "bold")
-        ).pack(pady=10)
-        self.lbl_rec = ctk.CTkButton(
+        self._section_title("Global Hotkeys", padx=px(18), pady=(px(16), px(2)))
+        tkinter.Label(
+            self.settings_frame,
+            text="Click a shortcut, then press the new key.",
+            bg=UI_WINDOW_BG, fg=UI.dim, anchor="w",
+            font=("DejaVu Sans", int(round(9 * UI_SCALE))),
+        ).pack(fill="x", padx=px(18), pady=(0, px(10)))
+        self.lbl_rec = AdwRow(
             self.settings_frame,
             text=f"Record: {self.get_key_name(self.hotkey_rec)}",
-            command=lambda: self.start_mapping("rec", self.lbl_rec)
+            command=lambda: self.start_mapping("rec", self.lbl_rec),
+            scale=UI_SCALE, palette=UI,
         )
-        self.lbl_rec.pack(pady=5, fill="x", padx=20)
-        self.lbl_play = ctk.CTkButton(
+        self.lbl_rec.pack(fill="x", padx=px(18), pady=px(3))
+        self.lbl_play = AdwRow(
             self.settings_frame,
             text=f"Play/Stop: {self.get_key_name(self.hotkey_play)}",
-            command=lambda: self.start_mapping("play", self.lbl_play)
+            command=lambda: self.start_mapping("play", self.lbl_play),
+            scale=UI_SCALE, palette=UI,
         )
-        self.lbl_play.pack(pady=5, fill="x", padx=20)
-        ctk.CTkCheckBox(
-            self.settings_frame, text="Humanize",
-            variable=self.humanize_enabled
-        ).pack(pady=10)
+        self.lbl_play.pack(fill="x", padx=px(18), pady=px(3))
+        self._switch_row("Humanize", self.humanize_enabled,
+                         padx=px(18), pady=(px(12), 0))
         if updater.appimage_path() is not None:
-            self.settings_win.geometry("300x400")
             self._build_updates_section()
+        # Measured on the next loop turn, not inline: the canvas rows only
+        # publish their requested size once their first redraw has run, so an
+        # inline measurement came out ~100 px short in the Updates section.
+        self.settings_win.after(0, self._fit_settings_height)
+
+    def _fit_settings_height(self, attempt=0):
+        """Makes the Settings window exactly as tall as its packed rows.
+
+        Re-armed while the content keeps asking for a new height: resizing the
+        window re-lays-out the rows, which can reveal one more request (the
+        progress bar). Stops on the first unchanged measurement, so it cannot
+        ping-pong, and after 4 turns it leaves whatever it has.
+        """
+        if not (hasattr(self, "settings_win")
+                and self.settings_win.winfo_exists()):
+            return
+        need = self.settings_frame.winfo_reqheight()
+        if not need or need == getattr(self, "_settings_height", None):
+            return
+        self._settings_height = need
+        self.settings_win.geometry("%dx%d" % (px(300), need))
+        if attempt < 4:
+            self.settings_win.after(
+                0, lambda: self._fit_settings_height(attempt + 1))
+
+    def _section_title(self, text, padx=None, pady=None):
+        """Bold page heading, the way a preferences section opens."""
+        tkinter.Label(
+            self.settings_frame, text=text, bg=UI_WINDOW_BG,
+            fg=UI.window_fg, anchor="w",
+            font=("DejaVu Sans", int(round(13 * UI_SCALE)), "bold"),
+        ).pack(fill="x", padx=padx if padx is not None else px(18),
+               pady=pady if pady is not None else (px(16), px(2)))
+
+    def _switch_row(self, label, variable, command=None, padx=None,
+                    pady=None):
+        """A label on the left and an Adwaita switch on the right."""
+        row = tkinter.Frame(self.settings_frame, bg=UI_WINDOW_BG)
+        # The bottom margin is part of the row: the window is now exactly as
+        # tall as its content, so without it the switch sits on the edge.
+        row.pack(fill="x", padx=padx if padx is not None else px(18),
+                 pady=pady if pady is not None else (px(12), px(14)))
+        tkinter.Label(
+            row, text=label, bg=UI_WINDOW_BG, fg=UI.window_fg, anchor="w",
+            font=("DejaVu Sans", int(round(10 * UI_SCALE))),
+        ).pack(side="left", fill="x", expand=True)
+        AdwSwitch(
+            row, variable=variable, command=command,
+            scale=UI_SCALE, palette=UI,
+        ).pack(side="right")
 
     def _close_settings(self):
         self.is_mapping = None
@@ -429,7 +520,7 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
     def start_mapping(self, mode, btn):
         """Starts hotkey mapping mode."""
         self.is_mapping = mode
-        btn.configure(text="Press any key...", fg_color="#FFA500")
+        btn.configure(text="Press any key...", fg_color=MAPPING_FILL)
 
     def toggle_loop(self):
         """Toggles loop playback mode."""
@@ -437,7 +528,7 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         self.btn_loop.configure(
             # Loop state is shown by color (blue = on), so one glyph suffices.
             text="↻",
-            fg_color="#1976d2" if self.loop_enabled else UI_NEUTRAL
+            fg_color=LOOP_FILL if self.loop_enabled else UI_NEUTRAL
         )
 
     def _config_path(self):
@@ -534,7 +625,7 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
             btn = self.__dict__.get("btn_settings")
             if btn is not None:
                 try:
-                    btn.configure(fg_color="#1976d2")
+                    btn.configure(fg_color=LOOP_FILL)
                 except Exception:  # a dead widget is not fatal
                     logger.debug("Could not recolour the settings button.",
                                  exc_info=True)
@@ -710,43 +801,47 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
 
     def _build_updates_section(self):
         """The Updates block of the Settings window (AppImage only)."""
-        ctk.CTkLabel(
-            self.settings_frame, text="Updates",
-            font=("DejaVu Sans", 14, "bold")
-        ).pack(pady=(12, 4))
-        self.update_version_lbl = ctk.CTkLabel(
+        self._section_title("Updates", padx=px(18), pady=(px(18), px(2)))
+        self.update_version_lbl = tkinter.Label(
             self.settings_frame,
             text="Current version: v%s" % APP_VERSION,
-            font=("DejaVu Sans", 11),
+            bg=UI_WINDOW_BG, fg=UI.dim, anchor="w",
+            font=("DejaVu Sans", int(round(9 * UI_SCALE))),
         )
-        self.update_version_lbl.pack()
-        self.update_status_lbl = ctk.CTkLabel(
-            self.settings_frame, text="", wraplength=260,
-            font=("DejaVu Sans", 11),
+        self.update_version_lbl.pack(fill="x", padx=px(18))
+        self.update_status_lbl = tkinter.Label(
+            self.settings_frame, text="", wraplength=px(256), justify="left",
+            bg=UI_WINDOW_BG, fg=UI.window_fg, anchor="w",
+            font=("DejaVu Sans", int(round(9 * UI_SCALE))),
         )
-        self.update_status_lbl.pack(pady=(2, 6))
-        self.update_progress_bar = ctk.CTkProgressBar(
-            self.settings_frame, width=220)
+        self.update_status_lbl.pack(fill="x", padx=px(18), pady=(px(4), px(8)))
+        self.update_progress_bar = AdwProgress(
+            self.settings_frame, height=6, scale=UI_SCALE, palette=UI)
         self.update_progress_bar.set(0)
-        self.update_progress_bar.pack(pady=(0, 6))
-        self.btn_update_check = ctk.CTkButton(
+        self.update_progress_bar.pack(fill="x", padx=px(18), pady=(0, px(8)))
+        # Fixed width rather than fill="x": the canvas paints its own raster,
+        # so it has to know its size up front instead of being stretched.
+        button_width = 300 - 2 * 18
+        self.btn_update_check = AdwButton(
             self.settings_frame, text="Check now",
+            width=button_width, height=34, raised=True,
+            font=("DejaVu Sans", 10), scale=UI_SCALE, palette=UI,
             command=lambda: self._start_update_check(force=True),
         )
-        self.btn_update_check.pack(pady=2, fill="x", padx=20)
-        self.btn_update_download = ctk.CTkButton(
+        self.btn_update_check.pack(padx=px(18), pady=px(3))
+        self.btn_update_download = AdwButton(
             self.settings_frame, text="Download and install",
+            width=button_width, height=34, raised=True,
+            font=("DejaVu Sans", 10), scale=UI_SCALE, palette=UI,
             command=self._start_update_download,
         )
-        self.btn_update_download.pack(pady=2, fill="x", padx=20)
+        self.btn_update_download.pack(padx=px(18), pady=px(3))
         cfg = self.__dict__.get("app_config") or {}
         self.update_auto_var = ctk.BooleanVar(
             value=cfg.get("update_check_enabled") is not False)
-        ctk.CTkCheckBox(
-            self.settings_frame, text="Check automatically",
-            variable=self.update_auto_var,
-            command=self._toggle_update_auto,
-        ).pack(pady=6)
+        self._switch_row("Check automatically", self.update_auto_var,
+                         command=self._toggle_update_auto,
+                         padx=px(18), pady=(px(8), 0))
         self._refresh_update_widgets()
 
     def _confirm_password_warning(self):
@@ -889,7 +984,7 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
                     order.clear()
             self.rec_tip = ToolTip(
                 self.btn_rec, RECORDING_TOOLTIP_TEXT)
-            self.btn_rec.configure(text="■", fg_color="#b71c1c")
+            self.btn_rec.configure(text="■", fg_color=RECORDING_FILL)
             logger.info(
                 "Recording started. Start pos: %s",
                 self.start_cursor_pos
@@ -897,7 +992,7 @@ class LinuxTaskApp(ctk.CTk, Recorder, Playback):
         else:
             self.recording = False
             self.rec_tip = ToolTip(self.btn_rec, "Record (F8)")
-            self.btn_rec.configure(text="●", fg_color="#d32f2f")
+            self.btn_rec.configure(text="●", fg_color=RECORDING_FILL)
             with self.events_lock:
                 ev_count = len(self.events)
             logger.info("Recording stopped. %d events captured.", ev_count)
